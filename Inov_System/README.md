@@ -60,9 +60,28 @@ contas e as taxas padrão cadastrados.
 - Períodos históricos agregados da planilha original (ex: "Out a Dez/2025") são importados e
   mostrados numa seção própria em cada obra, sem se misturar aos meses individuais
 
+## Interface
+
+Visual sóbrio/contábil: densidade alta, paleta neutra com azul institucional, cantos discretos
+e **números tabulares** (todo dígito com a mesma largura, para as colunas de valor alinharem).
+
+- **`templates/base.html`** — layout único de todas as telas internas. Uma tela filha só declara
+  `{% extends 'base.html' %}`, o item de menu ativo e os blocos `cabecalho` / `descricao` /
+  `acoes` / `conteudo`. Antes, cada template repetia `<head>`, sidebar e bloco de mensagens.
+- **Formatação brasileira** — filtros Jinja registrados em `app.py`: `moeda` (`1.234,56`),
+  `moeda_curta` (`1,48 mi`), `pct`, `data_br` e `competencia_br` (`2026-06` → `Jun/2026`).
+- **Tabela do DRE** — cabeçalho fixo na rolagem vertical, coluna de conta fixa na horizontal,
+  coluna de acumulado destacada, grupos/subtotais/deduções com peso visual distinto, zeros em
+  cinza claro e um botão para esconder as contas sem movimento no ano.
+- **Busca e filtros** no navegador (sem recarregar a página) nas listas de obras, empresas,
+  plano de contas e na grade de lançamentos. A busca ignora acento e caixa.
+- **Dashboard** com receita/custo em barras e resultado líquido em linha, margens, e ranking
+  das melhores e piores obras por resultado do ano.
+- `static/css/style.css` é a única folha de estilo — nenhum `<style>` solto nos templates.
+- Impressão: `Ctrl+P` em qualquer DRE sai limpo (sem menu nem botões), pronto para PDF.
+
 ## Próximos passos sugeridos
 
-- Deixar a interface mais polida visualmente (hoje é funcional, mas simples)
 - Login com permissão por usuário (ex: um usuário só vê certas obras)
 - Comparação automática com o ano anterior (como a planilha já mostra)
 - Tela para revisar/corrigir categorias criadas automaticamente na importação
@@ -76,10 +95,17 @@ contas e as taxas padrão cadastrados.
 ## Estrutura
 
 ```
-app.py        -> rotas Flask
+app.py        -> rotas Flask + filtros de formatação (moeda, pct, data_br...)
 db.py         -> schema do banco + seed do plano de contas e taxas
 dre.py        -> motor de cálculo do DRE
-templates/    -> telas (Jinja2)
-static/       -> CSS e JS
+dre_import.py -> leitura do arquivo real multi-abas da contabilidade
+dre_export.py -> geração do Excel do DRE
+templates/
+  base.html     -> layout de todas as telas internas
+  _sidebar.html -> menu lateral
+  _icons.html   -> macro icon(), ícones em SVG
+  _flash.html   -> bloco de mensagens
+  <demais>      -> uma tela cada, estendendo base.html
+static/       -> style.css (único) e script.js
 app_v1_backup.py, templates_v1_backup/ -> versão anterior do protótipo, mantida como referência
 ```

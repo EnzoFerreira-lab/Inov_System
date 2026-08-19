@@ -1,214 +1,265 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ obra["nome"] }} - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-    <style>
-        .dre-wrap { overflow-x: auto; }
-        table.dre { border-collapse: collapse; min-width: 1300px; width: 100%; font-size: 0.85rem; }
-        table.dre th, table.dre td { padding: 8px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid #eef0f4; }
-        table.dre th:first-child, table.dre td:first-child { text-align: left; position: sticky; left: 0; background: #fff; min-width: 240px; }
-        table.dre thead th { background: #f7f8fb; font-weight: 600; }
-        table.dre tr.grupo td { font-weight: 700; background: #f9fafc; }
-        table.dre tr.destaque td { font-weight: 700; border-top: 2px solid #d8dbe3; }
-        table.dre tr.negativo td { color: #b42318; }
-        .valor-neg { color: #b42318; }
-    </style>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'obras' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>{{ obra["nome"] }}</h1>
-                <p>{{ obra["empresa_nome"] }} · Código {{ obra["codigo"] }} ·
-                    <span class="badge {{ 'warning' if obra['status'] == 'encerrada' else 'primary' }}">
-                        {{ 'Encerrada' if obra['status'] == 'encerrada' else 'Em andamento' }}
-                    </span>
-                </p>
-            </div>
-            <div class="topbar-actions">
-                <form method="GET" style="display:flex; gap:8px; align-items:center;">
-                    <select class="select" name="ano" onchange="this.form.submit()">
-                        {% for a in range(ano - 3, ano + 2) %}
-                            <option value="{{ a }}" {{ 'selected' if a == ano else '' }}>{{ a }}</option>
-                        {% endfor %}
-                    </select>
-                </form>
-                <a href="/lancamentos?obra_id={{ obra['id'] }}" class="btn btn-primary">Lançar valores</a>
-                <a href="/obras/{{ obra['id'] }}/exportar?ano={{ ano }}" class="btn btn-light">Exportar Excel</a>
-                <a href="/obras/{{ obra['id'] }}/editar" class="btn btn-light">Editar obra</a>
-            </div>
+{% block titulo %}{{ obra["nome"] }}{% endblock %}
+
+{% block trilha %}
+    <nav class="breadcrumb">
+        <a href="{{ url_for('obras') }}">Obras</a> / <span>{{ obra["codigo"] }}</span>
+    </nav>
+{% endblock %}
+
+{% block cabecalho %}{{ obra["nome"] }}{% endblock %}
+
+{% block descricao %}
+    {{ obra["empresa_nome"] }} · Código {{ obra["codigo"] }} ·
+    <span class="badge {{ 'warning' if obra['status'] == 'encerrada' else 'success' }}">
+        {{ 'Encerrada' if obra['status'] == 'encerrada' else 'Em andamento' }}
+    </span>
+    {% if obra["data_inicio"] %}· início em {{ obra["data_inicio"]|data_br }}{% endif %}
+{% endblock %}
+
+{% block acoes %}
+    <form method="GET" class="row">
+        <select class="select input-sm" name="ano" onchange="this.form.submit()" aria-label="Ano">
+            {% for a in range(ano - 3, ano + 2) %}
+                <option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    <a href="{{ url_for('lancamentos_manual') }}?obra_id={{ obra['id'] }}&ano={{ ano }}" class="btn btn-primary">
+        {{ icon('lancamentos') }} Lançar valores
+    </a>
+    <a href="{{ url_for('exportar_obra_excel', obra_id=obra['id']) }}?ano={{ ano }}" class="btn btn-light">
+        {{ icon('exportar') }} Excel
+    </a>
+    <button type="button" class="btn btn-light" onclick="window.print()" title="Imprimir ou salvar em PDF">
+        {{ icon('imprimir') }}<span class="sr-only">Imprimir</span>
+    </button>
+    <a href="{{ url_for('editar_obra', obra_id=obra['id']) }}" class="btn btn-light">
+        {{ icon('editar') }}<span class="sr-only">Editar obra</span>
+    </a>
+{% endblock %}
+
+{% block conteudo %}
+
+{% set margem = (acumulado['lucro_liquido'] / acumulado['receita_total'] * 100) if acumulado['receita_total'] else 0 %}
+
+<div class="cards-grid">
+    <div class="card metric-card is-receita">
+        <div class="metric-label">Receita Bruta · {{ ano }}</div>
+        <div class="metric-value"><span class="currency">R$</span>{{ acumulado["receita_total"]|moeda }}</div>
+    </div>
+    <div class="card metric-card is-custo">
+        <div class="metric-label">Custos · {{ ano }}</div>
+        <div class="metric-value"><span class="currency">R$</span>{{ acumulado["custos_total"]|moeda }}</div>
+    </div>
+    <div class="card metric-card is-bruto">
+        <div class="metric-label">Lucro Bruto · {{ ano }}</div>
+        <div class="metric-value {{ 'valor-neg' if acumulado['lucro_bruto'] < 0 }}">
+            <span class="currency">R$</span>{{ acumulado["lucro_bruto"]|moeda }}
         </div>
-
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+    </div>
+    <div class="card metric-card is-liquido {{ 'is-negative' if acumulado['lucro_liquido'] < 0 }}">
+        <div class="metric-label">Lucro Líquido · {{ ano }}</div>
+        <div class="metric-value {{ 'valor-neg' if acumulado['lucro_liquido'] < 0 else 'valor-pos' }}">
+            <span class="currency">R$</span>{{ acumulado["lucro_liquido"]|moeda }}
         </div>
-
-        <div class="cards-grid">
-            <div class="card metric-card">
-                <small>Receita Bruta ({{ ano }})</small>
-                <h3>R$ {{ "%.2f"|format(acumulado["receita_total"]) }}</h3>
-            </div>
-            <div class="card metric-card">
-                <small>Custos ({{ ano }})</small>
-                <h3>R$ {{ "%.2f"|format(acumulado["custos_total"]) }}</h3>
-            </div>
-            <div class="card metric-card">
-                <small>Lucro Bruto ({{ ano }})</small>
-                <h3>R$ {{ "%.2f"|format(acumulado["lucro_bruto"]) }}</h3>
-            </div>
-            <div class="card metric-card">
-                <small>Lucro Líquido ({{ ano }})</small>
-                <h3 class="{{ 'valor-neg' if acumulado['lucro_liquido'] < 0 else '' }}">
-                    R$ {{ "%.2f"|format(acumulado["lucro_liquido"]) }}
-                </h3>
-            </div>
-        </div>
-
-        {% if saldos_anteriores %}
-        <div class="card table-card">
-            <div class="card-header">
-                <div>
-                    <h2>Períodos históricos (sem detalhamento mensal)</h2>
-                    <p>Blocos de meses agregados na planilha original, anteriores ao controle mês a mês
-                       (ex: "Out a Dez/2025"). Não entram na tabela acima nem no acumulado de {{ ano }},
-                       mas ficam registrados aqui pra não se perder nenhum valor da planilha.</p>
-                </div>
-            </div>
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Período</th>
-                        <th>Receita</th>
-                        <th>Custos</th>
-                        <th>Resultado</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for s in saldos_anteriores %}
-                    <tr>
-                        <td>{{ s.periodo }}</td>
-                        <td>{{ "%.2f"|format(s.receita_total) }}</td>
-                        <td class="valor-neg">{{ "%.2f"|format(-s.custos_total) }}</td>
-                        <td class="{{ 'valor-neg' if s.resultado < 0 else '' }}">{{ "%.2f"|format(s.resultado) }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
-
-        <div class="card table-card">
-            <div class="card-header">
-                <div>
-                    <h2>DRE — {{ ano }}</h2>
-                    <p>Demonstração do Resultado, mês a mês (igual ao modelo da planilha)</p>
-                </div>
-            </div>
-
-            <div class="dre-wrap">
-            <table class="dre">
-                <thead>
-                    <tr>
-                        <th>Categoria</th>
-                        {% for a, m in meses %}
-                            <th>{{ meses_nome[m][:3] }}/{{ a }}</th>
-                        {% endfor %}
-                        <th>Acumulado</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr class="grupo"><td>Receitas Brutas</td>{% for a,m in meses %}<td></td>{% endfor %}<td></td></tr>
-                    {% for cat in categorias if cat.tipo == 'receita' %}
-                    <tr>
-                        <td>{{ cat.nome }}{% if cat.codigo %} - {{ cat.codigo }}{% endif %}</td>
-                        {% for a, m in meses %}
-                            {% set v = cat.valores.get((a, m), 0) %}
-                            <td>{{ "%.2f"|format(v) }}</td>
-                        {% endfor %}
-                        <td>{{ "%.2f"|format(cat.valores.values()|sum) }}</td>
-                    </tr>
-                    {% endfor %}
-                    <tr class="destaque">
-                        <td>= Receitas Brutas Total</td>
-                        {% for a, m in meses %}<td>{{ "%.2f"|format(totais[(a, m)]["receita_total"]) }}</td>{% endfor %}
-                        <td>{{ "%.2f"|format(acumulado["receita_total"]) }}</td>
-                    </tr>
-
-                    <tr class="grupo"><td>Custos</td>{% for a,m in meses %}<td></td>{% endfor %}<td></td></tr>
-                    {% for cat in categorias if cat.tipo == 'custo' %}
-                    <tr>
-                        <td>{{ cat.nome }}{% if cat.codigo %} - {{ cat.codigo }}{% endif %}</td>
-                        {% for a, m in meses %}
-                            {% set v = cat.valores.get((a, m), 0) %}
-                            <td class="{{ 'valor-neg' if v > 0 else '' }}">{{ "%.2f"|format(-v) }}</td>
-                        {% endfor %}
-                        <td class="valor-neg">{{ "%.2f"|format(-(cat.valores.values()|sum)) }}</td>
-                    </tr>
-                    {% endfor %}
-                    <tr class="destaque negativo">
-                        <td>= Custos Total</td>
-                        {% for a, m in meses %}<td>{{ "%.2f"|format(-totais[(a, m)]["custos_total"]) }}</td>{% endfor %}
-                        <td>{{ "%.2f"|format(-acumulado["custos_total"]) }}</td>
-                    </tr>
-
-                    <tr class="destaque">
-                        <td>= Lucro / Prejuízo Bruto</td>
-                        {% for a, m in meses %}
-                            {% set v = totais[(a, m)]["lucro_bruto"] %}
-                            <td class="{{ 'valor-neg' if v < 0 else '' }}">{{ "%.2f"|format(v) }}</td>
-                        {% endfor %}
-                        <td class="{{ 'valor-neg' if acumulado['lucro_bruto'] < 0 else '' }}">{{ "%.2f"|format(acumulado["lucro_bruto"]) }}</td>
-                    </tr>
-
-                    <tr>
-                        <td>(-) Impostos s/ Serviços</td>
-                        {% for a, m in meses %}<td class="valor-neg">{{ "%.2f"|format(-totais[(a, m)]["impostos_servicos"]) }}</td>{% endfor %}
-                        <td class="valor-neg">{{ "%.2f"|format(-acumulado["impostos_servicos"]) }}</td>
-                    </tr>
-                    <tr>
-                        <td>(-) IRPJ e CSLL</td>
-                        {% for a, m in meses %}<td class="valor-neg">{{ "%.2f"|format(-totais[(a, m)]["irpj_csll"]) }}</td>{% endfor %}
-                        <td class="valor-neg">{{ "%.2f"|format(-acumulado["irpj_csll"]) }}</td>
-                    </tr>
-                    <tr>
-                        <td>(-) Desp. Administrativas/Técnico</td>
-                        {% for a, m in meses %}<td class="valor-neg">{{ "%.2f"|format(-totais[(a, m)]["despesa_administrativa"]) }}</td>{% endfor %}
-                        <td class="valor-neg">{{ "%.2f"|format(-acumulado["despesa_administrativa"]) }}</td>
-                    </tr>
-                    <tr>
-                        <td>(-) Despesas Financeiras</td>
-                        {% for a, m in meses %}<td class="valor-neg">{{ "%.2f"|format(-totais[(a, m)]["despesa_financeira"]) }}</td>{% endfor %}
-                        <td class="valor-neg">{{ "%.2f"|format(-acumulado["despesa_financeira"]) }}</td>
-                    </tr>
-
-                    <tr class="destaque">
-                        <td>LUCRO/PREJUÍZO LÍQUIDO DA OBRA</td>
-                        {% for a, m in meses %}
-                            {% set v = totais[(a, m)]["lucro_liquido"] %}
-                            <td class="{{ 'valor-neg' if v < 0 else '' }}">{{ "%.2f"|format(v) }}</td>
-                        {% endfor %}
-                        <td class="{{ 'valor-neg' if acumulado['lucro_liquido'] < 0 else '' }}">{{ "%.2f"|format(acumulado["lucro_liquido"]) }}</td>
-                    </tr>
-                </tbody>
-            </table>
-            </div>
-        </div>
-    </main>
+        <span class="metric-foot">Margem de {{ margem|pct }}</span>
+    </div>
 </div>
 
-</body>
-</html>
+{% if saldos_anteriores %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Períodos históricos</h2>
+            <p>Blocos de meses já agregados na planilha original (ex: "Out a Dez/2025"), anteriores ao
+               controle mês a mês. Ficam registrados aqui para não se perder nenhum valor, mas
+               <strong>não entram</strong> na tabela nem no acumulado de {{ ano }}.</p>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Período</th>
+                    <th class="num">Receita</th>
+                    <th class="num">Custos</th>
+                    <th class="num">Resultado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in saldos_anteriores %}
+                <tr>
+                    <td class="primary-cell">{{ s.periodo }}</td>
+                    <td class="num">{{ s.receita_total|moeda }}</td>
+                    <td class="num valor-neg">{{ (-s.custos_total)|moeda }}</td>
+                    <td class="num {{ 'valor-neg' if s.resultado < 0 else 'valor-pos' }}">{{ s.resultado|moeda }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% set receitas = categorias|selectattr('tipo', 'equalto', 'receita')|list %}
+{% set custos = categorias|selectattr('tipo', 'equalto', 'custo')|list %}
+{% set zeradas = categorias|rejectattr('total')|list %}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>DRE — {{ ano }}</h2>
+            <p>Demonstração do Resultado mês a mês, no mesmo formato da planilha.
+               Valores em R$; custos e deduções aparecem com sinal negativo.</p>
+        </div>
+        <div class="card-header-actions">
+            {% if zeradas %}
+            <label class="row text-sm text-muted" style="cursor:pointer;">
+                <input type="checkbox" id="ocultarZeradas">
+                Ocultar {{ zeradas|length }} conta(s) sem movimento
+            </label>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="dre-wrap">
+        <table class="dre">
+            <thead>
+                <tr>
+                    <th>Conta</th>
+                    {% for a, m in meses %}<th>{{ meses_abrev[m] }}</th>{% endfor %}
+                    <th>Acumulado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {# ---- Receitas ---- #}
+                <tr class="grupo">
+                    <td>Receitas Brutas</td>
+                    {% for a, m in meses %}<td></td>{% endfor %}<td></td>
+                </tr>
+
+                {% for cat in receitas %}
+                {% set total_cat = cat.total %}
+                <tr data-conta {{ 'data-zerada' if not total_cat }}>
+                    <td>{{ cat.nome }}{% if cat.codigo %}<span class="cat-code">{{ cat.codigo }}</span>{% endif %}</td>
+                    {% for a, m in meses %}
+                        {% set v = cat.valores.get((a, m), 0) %}
+                        {% if v %}<td>{{ v|moeda }}</td>{% else %}<td class="zero">–</td>{% endif %}
+                    {% endfor %}
+                    {% if total_cat %}<td>{{ total_cat|moeda }}</td>{% else %}<td class="zero">–</td>{% endif %}
+                </tr>
+                {% endfor %}
+
+                <tr class="subtotal">
+                    <td>= Receitas Brutas Total</td>
+                    {% for a, m in meses %}<td>{{ totais[(a, m)]["receita_total"]|moeda }}</td>{% endfor %}
+                    <td>{{ acumulado["receita_total"]|moeda }}</td>
+                </tr>
+
+                {# ---- Custos ---- #}
+                <tr class="grupo">
+                    <td>Custos</td>
+                    {% for a, m in meses %}<td></td>{% endfor %}<td></td>
+                </tr>
+
+                {% for cat in custos %}
+                {% set total_cat = cat.total %}
+                <tr data-conta {{ 'data-zerada' if not total_cat }}>
+                    <td>{{ cat.nome }}{% if cat.codigo %}<span class="cat-code">{{ cat.codigo }}</span>{% endif %}</td>
+                    {% for a, m in meses %}
+                        {% set v = cat.valores.get((a, m), 0) %}
+                        {% if v %}<td class="valor-neg">{{ (-v)|moeda }}</td>{% else %}<td class="zero">–</td>{% endif %}
+                    {% endfor %}
+                    {% if total_cat %}
+                        <td class="valor-neg">{{ (-total_cat)|moeda }}</td>
+                    {% else %}
+                        <td class="zero">–</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+
+                <tr class="subtotal">
+                    <td>= Custos Total</td>
+                    {% for a, m in meses %}
+                        <td class="valor-neg">{{ (-totais[(a, m)]["custos_total"])|moeda }}</td>
+                    {% endfor %}
+                    <td class="valor-neg">{{ (-acumulado["custos_total"])|moeda }}</td>
+                </tr>
+
+                {# ---- Resultado bruto e deduções ---- #}
+                <tr class="subtotal">
+                    <td>= Lucro / Prejuízo Bruto</td>
+                    {% for a, m in meses %}
+                        {% set v = totais[(a, m)]["lucro_bruto"] %}
+                        <td class="{{ 'valor-neg' if v < 0 }}">{{ v|moeda }}</td>
+                    {% endfor %}
+                    <td class="{{ 'valor-neg' if acumulado['lucro_bruto'] < 0 }}">{{ acumulado["lucro_bruto"]|moeda }}</td>
+                </tr>
+
+                {% for chave, rotulo in [
+                    ('impostos_servicos', '(-) Impostos s/ Serviços'),
+                    ('irpj_csll', '(-) IRPJ e CSLL'),
+                    ('despesa_administrativa', '(-) Desp. Administrativas/Técnico'),
+                    ('despesa_financeira', '(-) Despesas Financeiras')
+                ] %}
+                <tr class="deducao">
+                    <td>{{ rotulo }}</td>
+                    {% for a, m in meses %}
+                        {% set v = totais[(a, m)][chave] %}
+                        {% if v %}<td class="valor-neg">{{ (-v)|moeda }}</td>{% else %}<td class="zero">–</td>{% endif %}
+                    {% endfor %}
+                    <td class="valor-neg">{{ (-acumulado[chave])|moeda }}</td>
+                </tr>
+                {% endfor %}
+
+                {# ---- Resultado final ---- #}
+                <tr class="resultado">
+                    <td>LUCRO / PREJUÍZO LÍQUIDO</td>
+                    {% for a, m in meses %}
+                        {% set v = totais[(a, m)]["lucro_liquido"] %}
+                        <td class="{{ 'valor-neg' if v < 0 else 'valor-pos' }}">{{ v|moeda }}</td>
+                    {% endfor %}
+                    <td class="{{ 'valor-neg' if acumulado['lucro_liquido'] < 0 else 'valor-pos' }}">
+                        {{ acumulado["lucro_liquido"]|moeda }}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-legend">
+        <span>{{ receitas|length }} conta(s) de receita · {{ custos|length }} de custo</span>
+        <span>Deduções calculadas pelas taxas vigentes em cada mês</span>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const alternar = document.getElementById('ocultarZeradas');
+    if (!alternar) return;
+
+    const CHAVE = 'inov:ocultarZeradas';
+
+    const aplicar = () => {
+        document.querySelectorAll('tr[data-zerada]').forEach((linha) => {
+            linha.hidden = alternar.checked;
+        });
+    };
+
+    alternar.checked = localStorage.getItem(CHAVE) === '1';
+    aplicar();
+
+    alternar.addEventListener('change', () => {
+        localStorage.setItem(CHAVE, alternar.checked ? '1' : '0');
+        aplicar();
+    });
+})();
+</script>
+{% endblock %}

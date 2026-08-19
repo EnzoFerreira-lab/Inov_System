@@ -1,97 +1,92 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editar Obra - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'obras' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>Editar Obra</h1>
-                <p>{{ obra["nome"] }}</p>
-            </div>
-            <div class="topbar-actions">
-                <a href="/obras" class="btn btn-light">Voltar</a>
-                <a href="/obras/{{ obra['id'] }}" class="btn btn-light">Ver DRE</a>
-            </div>
-        </div>
+{% block titulo %}Editar Obra{% endblock %}
 
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
+{% block trilha %}
+    <nav class="breadcrumb">
+        <a href="{{ url_for('obras') }}">Obras</a> / <span>{{ obra["codigo"] }}</span>
+    </nav>
+{% endblock %}
 
-        <div class="card" style="max-width: 600px;">
-            <form method="POST">
-                <div class="form-grid">
-                    <div class="full">
-                        <div class="form-group">
-                            <label>Empresa</label>
-                            <select class="select" name="empresa_id" required>
-                                {% for empresa in empresas %}
-                                    <option value="{{ empresa['id'] }}" {{ 'selected' if empresa['id'] == obra['empresa_id'] else '' }}>
-                                        {{ empresa['nome'] }}
-                                    </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                    </div>
+{% block cabecalho %}Editar obra{% endblock %}
+{% block descricao %}{{ obra["nome"] }}{% endblock %}
 
+{% block acoes %}
+    <a href="{{ url_for('obras') }}" class="btn btn-light">{{ icon('voltar') }} Voltar</a>
+    <a href="{{ url_for('obra_dre', obra_id=obra['id']) }}" class="btn btn-soft">{{ icon('ver') }} Ver DRE</a>
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="card narrow">
+    <div class="card-header">
+        <div><h2>Dados da obra</h2></div>
+    </div>
+
+    <div>
+        <form method="POST">
+            <div class="form-grid">
+                <div class="full">
                     <div class="form-group">
-                        <label>Código da obra</label>
-                        <input class="input" type="text" name="codigo" value="{{ obra['codigo'] }}" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Status</label>
-                        <select class="select" name="status">
-                            <option value="em_andamento" {{ 'selected' if obra['status'] == 'em_andamento' else '' }}>Em andamento</option>
-                            <option value="encerrada" {{ 'selected' if obra['status'] == 'encerrada' else '' }}>Encerrada</option>
+                        <label for="ed-empresa">Empresa</label>
+                        <select class="select" id="ed-empresa" name="empresa_id" required>
+                            {% for empresa in empresas %}
+                                <option value="{{ empresa['id'] }}" {{ 'selected' if empresa['id'] == obra['empresa_id'] }}>
+                                    {{ empresa['nome'] }}
+                                </option>
+                            {% endfor %}
                         </select>
-                    </div>
-
-                    <div class="full">
-                        <div class="form-group">
-                            <label>Nome da obra</label>
-                            <input class="input" type="text" name="nome" value="{{ obra['nome'] }}" required>
-                        </div>
-                    </div>
-
-                    <div class="full">
-                        <div class="form-group">
-                            <label>Data de início</label>
-                            <input class="input" type="date" name="data_inicio" value="{{ obra['data_inicio'] or '' }}">
-                        </div>
                     </div>
                 </div>
 
-                <button class="btn btn-primary" type="submit">Salvar alterações</button>
-            </form>
-        </div>
+                <div class="form-group">
+                    <label for="ed-codigo">Código da obra</label>
+                    <input class="input" id="ed-codigo" type="text" name="codigo" value="{{ obra['codigo'] }}" required>
+                </div>
 
-        <div class="card" style="max-width: 600px; margin-top: 16px; border-color: #f3c8c8;">
-            <h3 style="margin-top:0;">Zona de risco</h3>
-            <p class="helper-text">Excluir a obra apaga também todos os lançamentos e o histórico dela. Essa ação não pode ser desfeita.</p>
-            <form method="POST" action="/obras/{{ obra['id'] }}/excluir"
-                  onsubmit="return confirm('Tem certeza que quer excluir esta obra e TODOS os lançamentos dela? Essa ação não pode ser desfeita.');">
-                <button class="btn btn-danger" type="submit">Excluir obra</button>
-            </form>
-        </div>
-    </main>
+                <div class="form-group">
+                    <label for="ed-status">Status</label>
+                    <select class="select" id="ed-status" name="status">
+                        <option value="em_andamento" {{ 'selected' if obra['status'] == 'em_andamento' }}>Em andamento</option>
+                        <option value="encerrada" {{ 'selected' if obra['status'] == 'encerrada' }}>Encerrada</option>
+                    </select>
+                </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label for="ed-nome">Nome da obra</label>
+                        <input class="input" id="ed-nome" type="text" name="nome" value="{{ obra['nome'] }}" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ed-inicio">Data de início</label>
+                    <input class="input" id="ed-inicio" type="date" name="data_inicio" value="{{ obra['data_inicio'] or '' }}">
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button class="btn btn-primary" type="submit">Salvar alterações</button>
+                <a class="btn btn-light" href="{{ url_for('obras') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
 </div>
 
-</body>
-</html>
+<div class="card narrow danger-zone">
+    <div>
+        <h3>Zona de risco</h3>
+        <p class="helper-text mb-2">
+            Excluir a obra apaga também <strong>todos os lançamentos</strong> e o histórico dela.
+            Essa ação não pode ser desfeita.
+        </p>
+        <form method="POST" action="{{ url_for('excluir_obra', obra_id=obra['id']) }}"
+              onsubmit="return confirm('Excluir a obra {{ obra['codigo'] }} e TODOS os lançamentos dela? Essa ação não pode ser desfeita.');">
+            <button class="btn btn-danger" type="submit">Excluir obra</button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

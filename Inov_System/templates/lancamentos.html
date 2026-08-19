@@ -1,127 +1,157 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lançar Dados - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'lancamentos' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>Lançar Dados</h1>
-                <p>Escolha a obra e a competência para atualizar os valores de cada categoria</p>
-            </div>
+{% block titulo %}Lançar Dados{% endblock %}
+{% block cabecalho %}Lançar Dados{% endblock %}
+{% block descricao %}Escolha a obra e a competência para atualizar os valores de cada categoria{% endblock %}
+
+{% block acoes %}
+    {% if obra_id %}
+        <a class="btn btn-light" href="{{ url_for('obra_dre', obra_id=obra_id) }}?ano={{ ano }}">
+            {{ icon('ver') }} Ver DRE da obra
+        </a>
+    {% endif %}
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Competência</h2>
+            <p>Obra e mês/ano que você quer editar</p>
         </div>
+    </div>
 
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+    <div class="card-section">
+        <form method="GET" class="form-inline">
+            <div class="form-group grow" style="min-width:280px;">
+                <label for="sel-obra">Obra</label>
+                <select class="select" id="sel-obra" name="obra_id" required>
+                    <option value="">Selecione a obra</option>
+                    {% for obra in obras %}
+                        <option value="{{ obra['id'] }}" {{ 'selected' if obra_id == obra['id'] }}>
+                            {{ obra['codigo'] }} — {{ obra['nome'] }}
+                        </option>
                     {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
-
-        <div class="card table-card">
-            <div class="card-header">
-                <div>
-                    <h2>Selecionar competência</h2>
-                </div>
+                </select>
             </div>
 
-            <form method="GET" class="form-grid">
-                <div class="form-group">
-                    <label>Obra</label>
-                    <select class="select" name="obra_id" required>
-                        <option value="">Selecione a obra</option>
-                        {% for obra in obras %}
-                            <option value="{{ obra['id'] }}" {{ 'selected' if obra_id == obra['id'] else '' }}>
-                                {{ obra['codigo'] }} - {{ obra['nome'] }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Mês</label>
-                    <select class="select" name="mes" required>
-                        {% for m in range(1, 13) %}
-                            <option value="{{ m }}" {{ 'selected' if mes == m else '' }}>{{ meses_nome[m] }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Ano</label>
-                    <input class="input" type="number" name="ano" value="{{ ano or 2026 }}" required>
-                </div>
-
-                <div class="form-group" style="align-self: end;">
-                    <button class="btn btn-primary" type="submit">Carregar</button>
-                </div>
-            </form>
-        </div>
-
-        {% if categorias %}
-        <div class="card table-card">
-            <div class="card-header">
-                <div>
-                    <h2>{{ meses_nome[mes] }}/{{ ano }}</h2>
-                    <p>Digite os valores de cada categoria (use ponto ou vírgula para centavos)</p>
-                </div>
+            <div class="form-group">
+                <label for="sel-mes">Mês</label>
+                <select class="select" id="sel-mes" name="mes" required>
+                    {% for m in range(1, 13) %}
+                        <option value="{{ m }}" {{ 'selected' if mes == m }}>{{ meses_nome[m] }}</option>
+                    {% endfor %}
+                </select>
             </div>
 
-            <form method="POST">
-                <input type="hidden" name="obra_id" value="{{ obra_id }}">
-                <input type="hidden" name="mes" value="{{ mes }}">
-                <input type="hidden" name="ano" value="{{ ano }}">
+            <div class="form-group">
+                <label for="sel-ano">Ano</label>
+                <input class="input" id="sel-ano" type="number" name="ano" value="{{ ano or 2026 }}"
+                       min="2000" max="2100" style="width:100px;" required>
+            </div>
 
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Código</th>
-                            <th>Categoria</th>
-                            <th>Tipo</th>
-                            <th>Valor (R$)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for cat in categorias %}
-                        <tr>
-                            <td>{{ cat["codigo"] or "—" }}</td>
-                            <td>{{ cat["nome"] }}</td>
-                            <td>
-                                <span class="badge {{ 'success' if cat['tipo'] == 'receita' else 'primary' }}">
-                                    {{ 'Receita' if cat['tipo'] == 'receita' else 'Custo' }}
-                                </span>
-                            </td>
-                            <td>
-                                <input class="input money-input" type="text"
-                                       name="valor_{{ cat['id'] }}"
-                                       value="{{ '%.2f'|format(cat['valor']) }}">
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-
-                <div style="margin-top: 16px;">
-                    <button class="btn btn-primary" type="submit">Salvar lançamentos</button>
-                    <a class="btn btn-light" href="/obras/{{ obra_id }}">Ver DRE da obra</a>
-                </div>
-            </form>
-        </div>
-        {% endif %}
-    </main>
+            <button class="btn btn-primary" type="submit">Carregar</button>
+        </form>
+    </div>
 </div>
 
-</body>
-</html>
+{% if categorias %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>{{ meses_nome[mes] }} de {{ ano }}</h2>
+            <p>Valores sempre positivos — o sistema aplica o sinal conforme o tipo da conta.
+               Pode usar vírgula ou ponto nos centavos.</p>
+        </div>
+        <div class="card-header-actions">
+            <label class="search-field">
+                <span class="sr-only">Buscar categoria</span>
+                {{ icon('busca') }}
+                <input class="input input-sm" type="search" data-filter-input placeholder="Filtrar categorias…">
+            </label>
+        </div>
+    </div>
+
+    <form method="POST" id="gradeLancamentos">
+        <input type="hidden" name="obra_id" value="{{ obra_id }}">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="ano" value="{{ ano }}">
+
+        <div class="table-wrap">
+            <table class="table" data-filter-table>
+                <thead>
+                    <tr>
+                        <th class="shrink">Código</th>
+                        <th>Categoria</th>
+                        <th class="shrink">Tipo</th>
+                        <th class="shrink num" style="width:180px;">Valor (R$)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cat in categorias %}
+                    <tr data-busca="{{ cat['codigo'] or '' }} {{ cat['nome'] }}">
+                        <td class="mono">{{ cat["codigo"] or "—" }}</td>
+                        <td class="primary-cell">{{ cat["nome"] }}</td>
+                        <td>
+                            <span class="badge {{ 'success' if cat['tipo'] == 'receita' else 'neutral' }}">
+                                {{ 'Receita' if cat['tipo'] == 'receita' else 'Custo' }}
+                            </span>
+                        </td>
+                        <td>
+                            <input class="input input-sm money-input text-right" type="text"
+                                   name="valor_{{ cat['id'] }}"
+                                   inputmode="decimal"
+                                   aria-label="Valor de {{ cat['nome'] }}"
+                                   value="{{ '%.2f'|format(cat['valor']) }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    <tr data-filter-empty hidden>
+                        <td colspan="4">
+                            <div class="empty-state">
+                                {{ icon('busca') }}
+                                <h3>Nenhuma categoria encontrada</h3>
+                                <p>Nenhuma categoria corresponde ao filtro.</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-section row-between">
+            <div class="row">
+                <button class="btn btn-primary" type="submit">Salvar lançamentos</button>
+                <a class="btn btn-light" href="{{ url_for('obra_dre', obra_id=obra_id) }}?ano={{ ano }}">
+                    Cancelar
+                </a>
+            </div>
+            <span class="helper-text">
+                Categorias escondidas pelo filtro continuam sendo salvas normalmente.
+            </span>
+        </div>
+    </form>
+</div>
+{% elif obra_id %}
+<div class="card">
+    <div class="empty-state">
+        {{ icon('vazio') }}
+        <h3>Nenhuma categoria ativa</h3>
+        <p>O plano de contas está vazio ou tem todas as categorias desativadas.</p>
+        <a class="btn btn-primary" href="{{ url_for('categorias') }}">Ir para o Plano de Contas</a>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        {{ icon('lancamentos') }}
+        <h3>Selecione uma obra e a competência</h3>
+        <p>A grade de categorias aparece aqui depois que você escolher a obra e o mês/ano acima.</p>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

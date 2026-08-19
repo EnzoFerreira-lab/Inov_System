@@ -1,102 +1,119 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Empresas - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'empresas' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>Empresas</h1>
-                <p>Clientes da contabilidade — cada empresa pode ter várias obras (centros de custo)</p>
-            </div>
-            <div class="topbar-actions">
-                <button class="btn btn-primary" onclick="openModal('modalEmpresa')">Nova Empresa</button>
-            </div>
+{% block titulo %}Empresas{% endblock %}
+{% block cabecalho %}Empresas{% endblock %}
+{% block descricao %}Clientes da contabilidade — cada empresa pode ter várias obras (centros de custo){% endblock %}
+
+{% block acoes %}
+    <button class="btn btn-primary" onclick="openModal('modalEmpresa')">{{ icon('novo') }} Nova empresa</button>
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Empresas cadastradas</h2>
+            <p><span data-filter-count>{{ empresas|length }}</span> de {{ empresas|length }} empresa(s)</p>
         </div>
 
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+        {% if empresas|length > 5 %}
+        <div class="filter-bar" data-filter-scope>
+            <label class="search-field">
+                <span class="sr-only">Buscar empresa</span>
+                {{ icon('busca') }}
+                <input class="input input-sm" type="search" data-filter-input placeholder="Buscar por nome ou CNPJ…">
+            </label>
         </div>
+        {% endif %}
+    </div>
 
-        <div class="card table-card">
-            <div class="card-header">
-                <div>
-                    <h2>Empresas cadastradas</h2>
-                    <p>{{ empresas|length }} empresa(s)</p>
-                </div>
-            </div>
-
-            {% if empresas %}
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Nome</th>
-                        <th>CNPJ</th>
-                        <th>Obras vinculadas</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for empresa in empresas %}
-                    <tr>
-                        <td>{{ empresa["nome"] }}</td>
-                        <td>{{ empresa["cnpj"] or "—" }}</td>
-                        <td><span class="badge primary">{{ empresa["total_obras"] }}</span></td>
-                        <td><a class="btn btn-light" href="/empresas/{{ empresa['id'] }}/editar">Editar</a></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-                <div class="empty-state">Nenhuma empresa cadastrada ainda.</div>
-            {% endif %}
+    {% if empresas %}
+    <div class="table-wrap">
+        <table class="table" data-filter-table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th class="shrink">CNPJ</th>
+                    <th class="shrink num">Obras</th>
+                    <th class="shrink"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for empresa in empresas %}
+                <tr data-busca="{{ empresa['nome'] }} {{ empresa['cnpj'] or '' }}">
+                    <td class="primary-cell">{{ empresa["nome"] }}</td>
+                    <td class="mono">{{ empresa["cnpj"] or "—" }}</td>
+                    <td class="num">
+                        {% if empresa["total_obras"] %}
+                            <a href="{{ url_for('obras') }}" class="badge primary no-dot">{{ empresa["total_obras"] }}</a>
+                        {% else %}
+                            <span class="badge neutral no-dot">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="row-actions">
+                            <a class="btn btn-light btn-sm" href="{{ url_for('editar_empresa', empresa_id=empresa['id']) }}">
+                                {{ icon('editar') }} Editar
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr data-filter-empty hidden>
+                    <td colspan="4">
+                        <div class="empty-state">
+                            {{ icon('busca') }}
+                            <h3>Nenhuma empresa encontrada</h3>
+                            <p>Nenhuma empresa corresponde à busca.</p>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <div class="empty-state">
+            {{ icon('vazio') }}
+            <h3>Nenhuma empresa cadastrada</h3>
+            <p>A empresa é o cliente da contabilidade. Cadastre a primeira para depois vincular as obras a ela.</p>
+            <button class="btn btn-primary" onclick="openModal('modalEmpresa')">{{ icon('novo') }} Nova empresa</button>
         </div>
-    </main>
+    {% endif %}
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <div class="modal" id="modalEmpresa">
     <div class="modal-content">
         <div class="modal-header">
-            <h3>Nova Empresa</h3>
-            <button class="close-btn" onclick="closeModal('modalEmpresa')">✕</button>
+            <h3>Nova empresa</h3>
+            <button class="close-btn" onclick="closeModal('modalEmpresa')" aria-label="Fechar">✕</button>
         </div>
 
         <form method="POST">
-            <div class="form-grid">
-                <div class="full">
-                    <div class="form-group">
-                        <label>Nome da empresa</label>
-                        <input class="input" type="text" name="nome" placeholder="Ex: BELA NOVA CONSTRUTORA LTDA" required>
-                    </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="empresa-nome">Nome da empresa</label>
+                    <input class="input" id="empresa-nome" type="text" name="nome"
+                           placeholder="BELA NOVA CONSTRUTORA LTDA" required>
                 </div>
 
-                <div class="full">
-                    <div class="form-group">
-                        <label>CNPJ</label>
-                        <input class="input" type="text" id="cnpj" name="cnpj" placeholder="00.000.000/0000-00">
-                    </div>
+                <div class="form-group">
+                    <label for="cnpj">CNPJ</label>
+                    <input class="input" type="text" id="cnpj" name="cnpj" placeholder="00.000.000/0000-00">
+                    <div class="helper-text">Opcional. É formatado automaticamente enquanto você digita.</div>
                 </div>
             </div>
 
-            <button class="btn btn-primary" type="submit">Salvar empresa</button>
+            <div class="modal-footer">
+                <button class="btn btn-light" type="button" onclick="closeModal('modalEmpresa')">Cancelar</button>
+                <button class="btn btn-primary" type="submit">Salvar empresa</button>
+            </div>
         </form>
     </div>
 </div>
-
-</body>
-</html>
+{% endblock %}

@@ -1,139 +1,190 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'dashboard' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>Visão Geral</h1>
-                <p>Resultado consolidado de todas as obras em {{ ano_atual }}</p>
-            </div>
-            <div class="topbar-actions">
-                <a href="/obras" class="btn btn-light">Ver obras</a>
-                <a href="/totais" class="btn btn-primary">Ver DRE consolidado</a>
-            </div>
+{% block titulo %}Dashboard{% endblock %}
+{% block cabecalho %}Visão Geral{% endblock %}
+{% block descricao %}
+    Resultado consolidado de {{ total_obras }} obra(s) em {{ ano_atual }} —
+    {{ obras_com_movimento }} com movimento em {{ meses_com_dado }} mês(es).
+{% endblock %}
+
+{% block acoes %}
+    <form method="GET" class="row">
+        <select class="select input-sm" name="ano" onchange="this.form.submit()" aria-label="Ano">
+            {% for a in range(ano_atual - 3, ano_atual + 2) %}
+                <option value="{{ a }}" {{ 'selected' if a == ano_atual }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    <a href="{{ url_for('obras') }}" class="btn btn-light">{{ icon('obras') }} Obras</a>
+    <a href="{{ url_for('totais') }}" class="btn btn-primary">{{ icon('totais') }} DRE consolidado</a>
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="cards-grid">
+    <div class="card metric-card is-receita">
+        <div class="metric-label">Receita Bruta</div>
+        <div class="metric-value"><span class="currency">R$</span>{{ acumulado.receita_total|moeda }}</div>
+        <span class="metric-foot">Acumulado em {{ ano_atual }}</span>
+    </div>
+
+    <div class="card metric-card is-custo">
+        <div class="metric-label">Custos</div>
+        <div class="metric-value"><span class="currency">R$</span>{{ acumulado.custos_total|moeda }}</div>
+        <span class="metric-foot">
+            {% if acumulado.receita_total %}
+                {{ (acumulado.custos_total / acumulado.receita_total * 100)|pct }} da receita
+            {% else %}
+                Sem receita no período
+            {% endif %}
+        </span>
+    </div>
+
+    <div class="card metric-card is-bruto">
+        <div class="metric-label">Lucro Bruto</div>
+        <div class="metric-value {{ 'valor-neg' if acumulado.lucro_bruto < 0 }}">
+            <span class="currency">R$</span>{{ acumulado.lucro_bruto|moeda }}
         </div>
+        <span class="metric-foot">Margem bruta de {{ margem_bruta|pct }}</span>
+    </div>
 
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+    <div class="card metric-card is-liquido {{ 'is-negative' if acumulado.lucro_liquido < 0 }}">
+        <div class="metric-label">Resultado Líquido</div>
+        <div class="metric-value {{ 'valor-neg' if acumulado.lucro_liquido < 0 else 'valor-pos' }}">
+            <span class="currency">R$</span>{{ acumulado.lucro_liquido|moeda }}
         </div>
-
-        <div class="cards-grid">
-            <div class="card metric-card">
-                <small>Receita Bruta</small>
-                <h3>R$ {{ "%.2f"|format(receita_bruta) }}</h3>
-                <span>Acumulado no ano</span>
-            </div>
-
-            <div class="card metric-card">
-                <small>Custos</small>
-                <h3>R$ {{ "%.2f"|format(custos) }}</h3>
-                <span>Acumulado no ano</span>
-            </div>
-
-            <div class="card metric-card">
-                <small>Lucro Bruto</small>
-                <h3>R$ {{ "%.2f"|format(lucro_bruto) }}</h3>
-                <span>Receita menos custos</span>
-            </div>
-
-            <div class="card metric-card">
-                <small>Resultado Líquido</small>
-                <h3>R$ {{ "%.2f"|format(resultado_liquido) }}</h3>
-                <span>Após impostos, IRPJ/CSLL, adm. e financeiras</span>
-            </div>
-        </div>
-
-        <div class="dashboard-grid">
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <h2>Evolução Mensal</h2>
-                        <p>Lucro líquido consolidado por mês</p>
-                    </div>
-                </div>
-
-                <div class="chart-area">
-                    <canvas id="graficoFinanceiro"></canvas>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <h2>Obras</h2>
-                        <p>Acesso rápido ao DRE de cada obra</p>
-                    </div>
-                </div>
-
-                <div class="quick-list">
-                    {% if obras %}
-                        {% for obra in obras %}
-                            <a href="/obras/{{ obra['id'] }}" class="quick-item">
-                                <div class="quick-item-info">
-                                    <h4>{{ obra["nome"] }}</h4>
-                                    <span>{{ obra["empresa_nome"] }} · Código {{ obra["codigo"] }}</span>
-                                </div>
-                                <span class="badge {{ 'warning' if obra['status'] == 'encerrada' else 'primary' }}">
-                                    {{ 'Encerrada' if obra['status'] == 'encerrada' else 'Em andamento' }}
-                                </span>
-                            </a>
-                        {% endfor %}
-                    {% else %}
-                        <div class="empty-state">
-                            Nenhuma obra cadastrada ainda. <a href="/obras">Cadastrar a primeira obra</a>.
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </main>
+        <span class="metric-foot">Margem líquida de {{ margem_liquida|pct }}</span>
+    </div>
 </div>
 
+<div class="dashboard-grid">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h2>Evolução mensal</h2>
+                <p>Receita e custo em barras, resultado líquido na linha</p>
+            </div>
+        </div>
+        <div>
+            <div class="chart-area"><canvas id="graficoFinanceiro"></canvas></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h2>Obras por resultado</h2>
+                <p>Líquido acumulado em {{ ano_atual }}</p>
+            </div>
+            <div class="tabs" role="tablist">
+                <button type="button" class="tab-btn active" data-tab-target="painelMelhores">Melhores</button>
+                <button type="button" class="tab-btn" data-tab-target="painelPiores">Piores</button>
+            </div>
+        </div>
+
+        {% macro lista_ranking(lista, id_painel, oculto) %}
+        <div class="rank-list tab-panel" id="{{ id_painel }}" {{ 'hidden' if oculto }}>
+            {% if lista %}
+                {% for obra in lista %}
+                <a class="rank-item" href="{{ url_for('obra_dre', obra_id=obra.id) }}?ano={{ ano_atual }}">
+                    <span class="rank-pos">{{ loop.index }}</span>
+                    <span class="rank-info">
+                        <strong>{{ obra.nome }}</strong>
+                        <span>{{ obra.margem|pct }} de margem · receita R$ {{ obra.receita|moeda_curta }}</span>
+                        <span class="rank-bar {{ 'is-negative' if obra.lucro_liquido < 0 }}">
+                            <i style="width: {{ (obra.lucro_liquido|abs / maior_absoluto * 100)|round(1) }}%"></i>
+                        </span>
+                    </span>
+                    <span class="rank-value {{ 'valor-neg' if obra.lucro_liquido < 0 else 'valor-pos' }}">
+                        {{ obra.lucro_liquido|moeda_curta }}
+                    </span>
+                </a>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    {{ icon('vazio') }}
+                    <h3>Nenhuma obra com movimento</h3>
+                    <p>Não há lançamentos em {{ ano_atual }}. Importe a planilha da contabilidade ou lance os valores manualmente.</p>
+                    <a href="{{ url_for('importar_dados') }}" class="btn btn-primary">{{ icon('importar') }} Importar planilha</a>
+                </div>
+            {% endif %}
+        </div>
+        {% endmacro %}
+
+        {{ lista_ranking(melhores, 'painelMelhores', false) }}
+        {{ lista_ranking(piores, 'painelPiores', true) }}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script id="dados-grafico" type="application/json">{{ grafico|tojson }}</script>
 <script>
-    const labels = JSON.parse('{{ labels|tojson|safe }}');
-    const valores = JSON.parse('{{ valores|tojson|safe }}');
-
+(function () {
     const canvas = document.getElementById('graficoFinanceiro');
+    if (!canvas || typeof Chart === 'undefined') return;
 
-    if (canvas) {
-        const ctx = canvas.getContext('2d');
+    const dados = JSON.parse(document.getElementById('dados-grafico').textContent);
 
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Lucro Líquido',
-                    data: valores,
-                    backgroundColor: 'rgba(29, 78, 216, 0.75)',
-                    borderRadius: 10
-                }]
+    // Eixo em R$ no padrão brasileiro, abreviado para caber na lateral.
+    const compacto = (v) => {
+        const abs = Math.abs(v);
+        if (abs >= 1e6) return (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi';
+        if (abs >= 1e3) return (v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' mil';
+        return v.toLocaleString('pt-BR');
+    };
+
+    const completo = (v) => 'R$ ' + v.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+    });
+
+    new Chart(canvas.getContext('2d'), {
+        data: {
+            labels: dados.labels,
+            datasets: [
+                {
+                    type: 'bar', label: 'Receita', data: dados.receita,
+                    backgroundColor: '#93c5fd', borderRadius: 3, order: 3
+                },
+                {
+                    type: 'bar', label: 'Custos', data: dados.custos,
+                    backgroundColor: '#fdba74', borderRadius: 3, order: 2
+                },
+                {
+                    type: 'line', label: 'Resultado líquido', data: dados.liquido,
+                    borderColor: '#1e40af', backgroundColor: '#1e40af',
+                    borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0.25, order: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, padding: 16 }
+                },
+                tooltip: {
+                    backgroundColor: '#0f172a', padding: 10, cornerRadius: 6, boxPadding: 4,
+                    callbacks: { label: (c) => ' ' + c.dataset.label + ': ' + completo(c.parsed.y) }
+                }
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                y: {
+                    border: { display: false },
+                    grid: { color: '#f1f5f9' },
+                    ticks: { font: { size: 11 }, callback: compacto }
+                }
             }
-        });
-    }
+        }
+    });
+})();
 </script>
-
-</body>
-</html>
+{% endblock %}

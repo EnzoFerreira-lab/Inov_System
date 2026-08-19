@@ -1,105 +1,138 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Importar Dados - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'importar' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>Importar Planilha</h1>
-                <p>Atualize vários lançamentos de uma vez, para várias obras ao mesmo tempo</p>
-            </div>
-        </div>
+{% block titulo %}Importar Planilha{% endblock %}
+{% block cabecalho %}Importar Planilha{% endblock %}
+{% block descricao %}Atualize os lançamentos de várias obras de uma vez, direto do Excel{% endblock %}
 
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
+{% block conteudo %}
 
-        <div class="card" style="margin-bottom: 20px;">
-            <div class="section-title">
-                <h2>Opção 1 — Enviar o arquivo de DRE da contabilidade (recomendado)</h2>
-                <p>Pode subir o mesmo arquivo Excel de sempre, com uma aba por obra
-                   (ex: "OBRA 251", "OBRA 265", "DEMAIS OBRAS"...). O sistema identifica
-                   sozinho cada obra, cada categoria e os valores de cada mês — não precisa
-                   reformatar nada.</p>
-            </div>
+<div class="card">
+    <form method="POST" enctype="multipart/form-data">
+        <div class="card-section">
+            <div class="upload-box" id="areaUpload">
+                {{ icon('planilha') }}
+                <h3>Enviar planilha</h3>
+                <p>Arraste o arquivo aqui ou selecione abaixo — o sistema identifica sozinho o formato</p>
 
-            <p class="helper-text">
-                Obras que ainda não existem no sistema são cadastradas automaticamente.
-                Categorias que já existem no plano de contas são reconhecidas mesmo com
-                pequenas diferenças de acento/maiúscula; categorias realmente novas são
-                criadas automaticamente. Importar o mesmo mês de novo atualiza os valores
-                (não duplica). As abas "TOTAIS" e "DEPTO TÉCNICO" ainda não são lidas
-                automaticamente — isso está no plano de próximos passos.
-            </p>
-        </div>
-
-        <div class="card" style="margin-bottom: 20px;">
-            <div class="section-title">
-                <h2>Opção 2 — Planilha simples (linha a linha)</h2>
-                <p>Alternativa para quando não for o arquivo de DRE completo — uma planilha
-                   simples com estas colunas:</p>
-            </div>
-
-            <div class="card table-card" style="box-shadow: none; border: 1px solid var(--border);">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>codigo_obra</th>
-                            <th>categoria</th>
-                            <th>mes</th>
-                            <th>ano</th>
-                            <th>valor</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>251</td>
-                            <td>Salarios e Ordenados</td>
-                            <td>6</td>
-                            <td>2026</td>
-                            <td>24143.11</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="card">
-            <form method="POST" enctype="multipart/form-data">
-                <div class="upload-box">
-                    <h3>Enviar planilha</h3>
-                    <p>Selecione o arquivo Excel (formato 1 ou 2 — o sistema identifica sozinho)</p>
-
-                    <div class="form-group" style="max-width: 500px; margin: 0 auto 18px;">
-                        <input class="input" type="file" name="arquivo" accept=".xlsx,.xls" required>
-                    </div>
-
-                    <button class="btn btn-primary" type="submit">Importar planilha</button>
-
-                    <div class="helper-text">
-                        Arquivos permitidos: .xlsx e .xls
-                    </div>
+                <div class="file-row">
+                    <input class="input" type="file" name="arquivo" id="campoArquivo" accept=".xlsx,.xls" required>
+                    <button class="btn btn-primary" type="submit">Importar</button>
                 </div>
-            </form>
+
+                <div class="helper-text" style="margin-top:12px;">Formatos aceitos: .xlsx e .xls</div>
+            </div>
         </div>
-    </main>
+    </form>
 </div>
 
-</body>
-</html>
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Formato 1 — arquivo de DRE da contabilidade <span class="badge primary">recomendado</span></h2>
+            <p>O mesmo arquivo de sempre, com uma aba por obra ("OBRA 251", "OBRA 265", "DEMAIS OBRAS"…).
+               Não precisa reformatar nada.</p>
+        </div>
+    </div>
+
+    <div>
+        <ul class="stack" style="gap:8px; list-style:none;">
+            <li class="callout">
+                {{ icon('info') }}
+                <div><strong>Obras novas</strong> que ainda não existem no sistema são cadastradas
+                     automaticamente, junto com a empresa detectada no cabeçalho da planilha.</div>
+            </li>
+            <li class="callout">
+                {{ icon('info') }}
+                <div><strong>Categorias</strong> já existentes são reconhecidas mesmo com diferenças
+                     de acento ou maiúscula; as realmente novas entram no plano de contas.</div>
+            </li>
+            <li class="callout">
+                {{ icon('info') }}
+                <div><strong>Reimportar o mesmo mês</strong> atualiza os valores em vez de duplicar —
+                     pode subir o arquivo fechado do mês quantas vezes precisar.</div>
+            </li>
+            <li class="callout">
+                {{ icon('alerta') }}
+                <div>A aba <strong>TOTAIS</strong> não é lida: o sistema calcula o consolidado ao vivo
+                     em <a href="{{ url_for('totais') }}">Totais Consolidado</a>.</div>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Formato 2 — planilha simples, linha a linha</h2>
+            <p>Alternativa para quando não for o arquivo de DRE completo. Uma linha por lançamento,
+               com exatamente estas colunas:</p>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>codigo_obra</th>
+                    <th>categoria</th>
+                    <th class="num">mes</th>
+                    <th class="num">ano</th>
+                    <th class="num">valor</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="mono">251</td>
+                    <td>Salarios e Ordenados</td>
+                    <td class="num">6</td>
+                    <td class="num">2026</td>
+                    <td class="num">24143.11</td>
+                </tr>
+                <tr>
+                    <td class="mono">251</td>
+                    <td>INSS</td>
+                    <td class="num">6</td>
+                    <td class="num">2026</td>
+                    <td class="num">6821.04</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-legend">
+        <span>A coluna <strong>categoria</strong> aceita o nome ou o código da conta</span>
+        <span>Linhas com obra ou categoria desconhecida são ignoradas e reportadas ao final</span>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const area = document.getElementById('areaUpload');
+    const campo = document.getElementById('campoArquivo');
+    if (!area || !campo) return;
+
+    ['dragenter', 'dragover'].forEach((evento) =>
+        area.addEventListener(evento, (e) => {
+            e.preventDefault();
+            area.classList.add('dragover');
+        })
+    );
+
+    ['dragleave', 'drop'].forEach((evento) =>
+        area.addEventListener(evento, (e) => {
+            e.preventDefault();
+            area.classList.remove('dragover');
+        })
+    );
+
+    area.addEventListener('drop', (e) => {
+        if (e.dataTransfer.files.length) campo.files = e.dataTransfer.files;
+    });
+})();
+</script>
+{% endblock %}

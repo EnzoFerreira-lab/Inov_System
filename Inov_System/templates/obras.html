@@ -1,144 +1,177 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Obras - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'obras' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>Obras (Centros de Custo)</h1>
-                <p>Cada obra é um centro de custo com seu próprio DRE, igual à planilha</p>
-            </div>
-            <div class="topbar-actions">
-                <button class="btn btn-primary" onclick="openModal('modalObra')">Nova Obra</button>
-            </div>
+{% block titulo %}Obras{% endblock %}
+{% block cabecalho %}Obras (Centros de Custo){% endblock %}
+{% block descricao %}Cada obra é um centro de custo com seu próprio DRE, igual à planilha{% endblock %}
+
+{% block acoes %}
+    <button class="btn btn-primary" onclick="openModal('modalObra')">{{ icon('novo') }} Nova obra</button>
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Obras cadastradas</h2>
+            <p><span data-filter-count>{{ obras|length }}</span> de {{ obras|length }} obra(s)</p>
         </div>
 
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
+        {# Filtro no navegador: com ~50 obras não vale ida e volta ao servidor. #}
+        <div class="filter-bar" data-filter-scope>
+            <label class="search-field">
+                <span class="sr-only">Buscar obra</span>
+                {{ icon('busca') }}
+                <input class="input input-sm" type="search" data-filter-input
+                       placeholder="Buscar por nome, código ou empresa…">
+            </label>
 
-        <div class="card table-card">
-            <div class="card-header">
-                <div>
-                    <h2>Obras cadastradas</h2>
-                    <p>{{ obras|length }} obra(s)</p>
-                </div>
+            <select class="select input-sm" data-filter-select="empresa" aria-label="Filtrar por empresa">
+                <option value="">Todas as empresas</option>
+                {% for empresa in empresas %}
+                    <option value="{{ empresa['nome'] }}">{{ empresa['nome'] }}</option>
+                {% endfor %}
+            </select>
+
+            <select class="select input-sm" data-filter-select="status" aria-label="Filtrar por status">
+                <option value="">Todos os status</option>
+                <option value="em_andamento">Em andamento</option>
+                <option value="encerrada">Encerrada</option>
+            </select>
+        </div>
+    </div>
+
+    {% if obras %}
+    <div class="table-wrap">
+        <table class="table" data-filter-table>
+            <thead>
+                <tr>
+                    <th class="shrink">Código</th>
+                    <th>Obra</th>
+                    <th>Empresa</th>
+                    <th class="shrink">Status</th>
+                    <th class="shrink"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for obra in obras %}
+                <tr data-busca="{{ obra['codigo'] }} {{ obra['nome'] }} {{ obra['empresa_nome'] }}"
+                    data-empresa="{{ obra['empresa_nome'] }}"
+                    data-status="{{ obra['status'] }}">
+                    <td class="mono">{{ obra["codigo"] }}</td>
+                    <td class="primary-cell">{{ obra["nome"] }}</td>
+                    <td class="text-muted">{{ obra["empresa_nome"] }}</td>
+                    <td>
+                        <span class="badge {{ 'warning' if obra['status'] == 'encerrada' else 'success' }}">
+                            {{ 'Encerrada' if obra['status'] == 'encerrada' else 'Em andamento' }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="row-actions">
+                            <a class="btn btn-soft btn-sm" href="{{ url_for('obra_dre', obra_id=obra['id']) }}">
+                                {{ icon('ver') }} DRE
+                            </a>
+                            <a class="btn btn-light btn-sm" href="{{ url_for('editar_obra', obra_id=obra['id']) }}">
+                                {{ icon('editar') }}<span class="sr-only">Editar</span>
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr data-filter-empty hidden>
+                    <td colspan="5">
+                        <div class="empty-state">
+                            {{ icon('busca') }}
+                            <h3>Nenhuma obra encontrada</h3>
+                            <p>Nenhuma obra corresponde à busca ou aos filtros selecionados.</p>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <div class="empty-state">
+            {{ icon('vazio') }}
+            <h3>Nenhuma obra cadastrada</h3>
+            <p>Cadastre a primeira obra ou importe o arquivo de DRE da contabilidade — as obras da planilha são criadas automaticamente.</p>
+            <div class="row" style="justify-content:center;">
+                <button class="btn btn-primary" onclick="openModal('modalObra')">{{ icon('novo') }} Nova obra</button>
+                <a class="btn btn-light" href="{{ url_for('importar_dados') }}">{{ icon('importar') }} Importar planilha</a>
             </div>
-
-            {% if obras %}
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Código</th>
-                        <th>Obra</th>
-                        <th>Empresa</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for obra in obras %}
-                    <tr>
-                        <td>{{ obra["codigo"] }}</td>
-                        <td>{{ obra["nome"] }}</td>
-                        <td>{{ obra["empresa_nome"] }}</td>
-                        <td>
-                            <span class="badge {{ 'warning' if obra['status'] == 'encerrada' else 'primary' }}">
-                                {{ 'Encerrada' if obra['status'] == 'encerrada' else 'Em andamento' }}
-                            </span>
-                        </td>
-                        <td>
-                            <a class="btn btn-light" href="/obras/{{ obra['id'] }}">Ver DRE</a>
-                            <a class="btn btn-light" href="/obras/{{ obra['id'] }}/editar">Editar</a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-                <div class="empty-state">Nenhuma obra cadastrada ainda.</div>
-            {% endif %}
         </div>
-    </main>
+    {% endif %}
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <div class="modal" id="modalObra">
     <div class="modal-content">
         <div class="modal-header">
-            <h3>Nova Obra</h3>
-            <button class="close-btn" onclick="closeModal('modalObra')">✕</button>
+            <h3>Nova obra</h3>
+            <button class="close-btn" onclick="closeModal('modalObra')" aria-label="Fechar">✕</button>
         </div>
 
         <form method="POST">
-            <div class="form-grid">
-                <div class="full">
+            <div class="modal-body">
+                {% if not empresas %}
+                <div class="callout mb-2">
+                    {{ icon('alerta') }}
+                    <div>Cadastre uma <strong>empresa</strong> antes de criar uma obra —
+                         toda obra pertence a uma empresa.
+                         <a href="{{ url_for('empresas') }}">Ir para Empresas</a>.</div>
+                </div>
+                {% endif %}
+
+                <div class="form-grid">
+                    <div class="full">
+                        <div class="form-group">
+                            <label for="obra-empresa">Empresa</label>
+                            <select class="select" id="obra-empresa" name="empresa_id" required>
+                                <option value="">Selecione a empresa</option>
+                                {% for empresa in empresas %}
+                                    <option value="{{ empresa['id'] }}">{{ empresa['nome'] }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="form-group">
-                        <label>Empresa</label>
-                        <select class="select" name="empresa_id" required>
-                            <option value="">Selecione a empresa</option>
-                            {% for empresa in empresas %}
-                                <option value="{{ empresa['id'] }}">{{ empresa['nome'] }}</option>
-                            {% endfor %}
+                        <label for="obra-codigo">Código da obra</label>
+                        <input class="input" id="obra-codigo" type="text" name="codigo" placeholder="251" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="obra-status">Status</label>
+                        <select class="select" id="obra-status" name="status">
+                            <option value="em_andamento">Em andamento</option>
+                            <option value="encerrada">Encerrada</option>
                         </select>
                     </div>
-                </div>
 
-                <div class="form-group">
-                    <label>Código da obra</label>
-                    <input class="input" type="text" name="codigo" placeholder="Ex: 251" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Status</label>
-                    <select class="select" name="status">
-                        <option value="em_andamento">Em andamento</option>
-                        <option value="encerrada">Encerrada</option>
-                    </select>
-                </div>
-
-                <div class="full">
-                    <div class="form-group">
-                        <label>Nome da obra</label>
-                        <input class="input" type="text" name="nome" placeholder="Ex: OBRA 251 - ESTHER TOWERS - EZTEC" required>
+                    <div class="full">
+                        <div class="form-group">
+                            <label for="obra-nome">Nome da obra</label>
+                            <input class="input" id="obra-nome" type="text" name="nome"
+                                   placeholder="OBRA 251 - ESTHER TOWERS - EZTEC" required>
+                        </div>
                     </div>
-                </div>
 
-                <div class="full">
                     <div class="form-group">
-                        <label>Data de início</label>
-                        <input class="input" type="date" name="data_inicio">
+                        <label for="obra-inicio">Data de início</label>
+                        <input class="input" id="obra-inicio" type="date" name="data_inicio">
                     </div>
                 </div>
             </div>
 
-            <button class="btn btn-primary" type="submit">Salvar obra</button>
+            <div class="modal-footer">
+                <button class="btn btn-light" type="button" onclick="closeModal('modalObra')">Cancelar</button>
+                <button class="btn btn-primary" type="submit">Salvar obra</button>
+            </div>
         </form>
     </div>
 </div>
-
-{% if not empresas %}
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        alert('Cadastre uma empresa antes de criar uma obra.');
-    });
-</script>
-{% endif %}
-
-</body>
-</html>
+{% endblock %}

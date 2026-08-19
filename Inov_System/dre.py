@@ -90,6 +90,11 @@ def calcular_dre_obra(obra_id, meses):
         if row["categoria_id"] in categoria_por_id:
             categoria_por_id[row["categoria_id"]]["valores"][chave] = row["valor"]
 
+    # Total da conta no período pedido — usado no acumulado da tabela e para
+    # saber se a conta ficou sem movimento (a tela permite escondê-las).
+    for c in categorias:
+        c["total"] = sum(c["valores"].values())
+
     totais = {}
     for ano, mes in meses:
         chave = (ano, mes)
@@ -188,25 +193,34 @@ def buscar_saldos_anteriores(obra_id):
     return resultado
 
 
+CAMPOS_TOTAIS = [
+    "receita_total", "custos_total", "lucro_bruto", "impostos_servicos",
+    "irpj_csll", "despesa_administrativa", "despesa_financeira", "lucro_liquido",
+]
+
+
 def calcular_dre_consolidado(obra_ids, meses):
-    """Soma o DRE de várias obras (usado na tela TOTAIS)."""
-    consolidado_totais = {chave: {
-        "receita_total": 0, "custos_total": 0, "lucro_bruto": 0,
-        "impostos_servicos": 0, "irpj_csll": 0,
-        "despesa_administrativa": 0, "despesa_financeira": 0,
-        "lucro_liquido": 0,
-    } for chave in meses}
+    """
+    Soma o DRE de várias obras (usado na tela TOTAIS e no dashboard).
+
+    Além do consolidado, devolve em 'por_obra' o acumulado de cada obra
+    separadamente — já foi calculado de qualquer forma, e é o que alimenta o
+    ranking do dashboard sem precisar de uma segunda passada no banco.
+    """
+    consolidado_totais = {chave: {campo: 0 for campo in CAMPOS_TOTAIS} for chave in meses}
+    por_obra = {}
 
     for obra_id in obra_ids:
         resultado = calcular_dre_obra(obra_id, meses)
+        por_obra[obra_id] = resultado["acumulado"]
+
         for chave, valores in resultado["totais"].items():
             for campo, valor in valores.items():
                 consolidado_totais[chave][campo] += valor
 
     acumulado = {
         campo: sum(t[campo] for t in consolidado_totais.values())
-        for campo in ["receita_total", "custos_total", "lucro_bruto", "impostos_servicos",
-                      "irpj_csll", "despesa_administrativa", "despesa_financeira", "lucro_liquido"]
+        for campo in CAMPOS_TOTAIS
     }
 
-    return {"totais": consolidado_totais, "acumulado": acumulado}
+    return {"totais": consolidado_totais, "acumulado": acumulado, "por_obra": por_obra}

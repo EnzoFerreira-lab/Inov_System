@@ -1,118 +1,166 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plano de Contas - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'categorias' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>Plano de Contas</h1>
-                <p>Categorias fixas de receita e custo usadas em todas as obras (igual à planilha)</p>
-            </div>
-            <div class="topbar-actions">
-                <button class="btn btn-primary" onclick="openModal('modalCategoria')">Nova Categoria</button>
-            </div>
-        </div>
+{% block titulo %}Plano de Contas{% endblock %}
+{% block cabecalho %}Plano de Contas{% endblock %}
+{% block descricao %}Categorias de receita e custo usadas em todas as obras (as mesmas da planilha){% endblock %}
 
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
+{% block acoes %}
+    <button class="btn btn-primary" onclick="openModal('modalCategoria')">{{ icon('novo') }} Nova categoria</button>
+{% endblock %}
 
-        <div class="card table-card">
-            <div class="card-header">
-                <div>
-                    <h2>Categorias</h2>
-                    <p>Desativar uma categoria não apaga o histórico, só a esconde de novos lançamentos</p>
-                </div>
-            </div>
+{% block conteudo %}
 
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Código</th>
-                        <th>Nome</th>
-                        <th>Tipo</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for cat in categorias %}
-                    <tr>
-                        <td>{{ cat["codigo"] or "—" }}</td>
-                        <td>{{ cat["nome"] }}</td>
-                        <td>
-                            <span class="badge {{ 'success' if cat['tipo'] == 'receita' else 'primary' }}">
-                                {{ 'Receita' if cat['tipo'] == 'receita' else 'Custo' }}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="badge {{ 'success' if cat['ativo'] else 'warning' }}">
-                                {{ 'Ativa' if cat['ativo'] else 'Inativa' }}
-                            </span>
-                        </td>
-                        <td>
-                            <a class="btn btn-light" href="/categorias/{{ cat['id'] }}/alternar-status">
-                                {{ 'Desativar' if cat['ativo'] else 'Ativar' }}
-                            </a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </main>
-</div>
+{% set receitas = categorias|selectattr('tipo', 'equalto', 'receita')|list %}
+{% set custos = categorias|selectattr('tipo', 'equalto', 'custo')|list %}
+{% set inativas = categorias|rejectattr('ativo')|list %}
 
-<div class="modal" id="modalCategoria">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>Nova Categoria</h3>
-            <button class="close-btn" onclick="closeModal('modalCategoria')">✕</button>
-        </div>
-
-        <form method="POST">
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>Código (opcional)</label>
-                    <input class="input" type="text" name="codigo" placeholder="Ex: 320">
-                </div>
-
-                <div class="form-group">
-                    <label>Tipo</label>
-                    <select class="select" name="tipo" required>
-                        <option value="custo">Custo</option>
-                        <option value="receita">Receita</option>
-                    </select>
-                </div>
-
-                <div class="full">
-                    <div class="form-group">
-                        <label>Nome da categoria</label>
-                        <input class="input" type="text" name="nome" placeholder="Ex: Aluguel de Container" required>
-                    </div>
-                </div>
-            </div>
-
-            <button class="btn btn-primary" type="submit">Salvar categoria</button>
-        </form>
+<div class="cards-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="card metric-card is-receita">
+        <div class="metric-label">Contas de receita</div>
+        <div class="metric-value">{{ receitas|length }}</div>
+    </div>
+    <div class="card metric-card is-custo">
+        <div class="metric-label">Contas de custo</div>
+        <div class="metric-value">{{ custos|length }}</div>
+    </div>
+    <div class="card metric-card">
+        <div class="metric-label">Inativas</div>
+        <div class="metric-value {{ 'text-faint' if not inativas }}">{{ inativas|length }}</div>
     </div>
 </div>
 
-</body>
-</html>
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Categorias</h2>
+            <p>Desativar uma categoria não apaga o histórico — só a esconde de novos lançamentos</p>
+        </div>
+
+        <div class="filter-bar" data-filter-scope>
+            <label class="search-field">
+                <span class="sr-only">Buscar categoria</span>
+                {{ icon('busca') }}
+                <input class="input input-sm" type="search" data-filter-input placeholder="Buscar por nome ou código…">
+            </label>
+
+            <select class="select input-sm" data-filter-select="tipo" aria-label="Filtrar por tipo">
+                <option value="">Receitas e custos</option>
+                <option value="receita">Só receitas</option>
+                <option value="custo">Só custos</option>
+            </select>
+
+            <select class="select input-sm" data-filter-select="ativo" aria-label="Filtrar por status">
+                <option value="">Ativas e inativas</option>
+                <option value="1">Só ativas</option>
+                <option value="0">Só inativas</option>
+            </select>
+
+            <span class="filter-count"><span data-filter-count>{{ categorias|length }}</span> de {{ categorias|length }}</span>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="table" data-filter-table>
+            <thead>
+                <tr>
+                    <th class="shrink">Código</th>
+                    <th>Nome</th>
+                    <th class="shrink">Tipo</th>
+                    <th class="shrink">Status</th>
+                    <th class="shrink"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cat in categorias %}
+                <tr data-busca="{{ cat['codigo'] or '' }} {{ cat['nome'] }}"
+                    data-tipo="{{ cat['tipo'] }}"
+                    data-ativo="{{ cat['ativo'] }}">
+                    <td class="mono">{{ cat["codigo"] or "—" }}</td>
+                    <td class="primary-cell {{ 'text-faint' if not cat['ativo'] }}">{{ cat["nome"] }}</td>
+                    <td>
+                        <span class="badge {{ 'success' if cat['tipo'] == 'receita' else 'neutral' }}">
+                            {{ 'Receita' if cat['tipo'] == 'receita' else 'Custo' }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge {{ 'primary' if cat['ativo'] else 'warning' }}">
+                            {{ 'Ativa' if cat['ativo'] else 'Inativa' }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="row-actions">
+                            <a class="btn btn-light btn-sm"
+                               href="{{ url_for('alternar_status_categoria', categoria_id=cat['id']) }}">
+                                {{ 'Desativar' if cat['ativo'] else 'Ativar' }}
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr data-filter-empty hidden>
+                    <td colspan="5">
+                        <div class="empty-state">
+                            {{ icon('busca') }}
+                            <h3>Nenhuma categoria encontrada</h3>
+                            <p>Nenhuma categoria corresponde à busca ou aos filtros selecionados.</p>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<div class="modal" id="modalCategoria">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Nova categoria</h3>
+            <button class="close-btn" onclick="closeModal('modalCategoria')" aria-label="Fechar">✕</button>
+        </div>
+
+        <form method="POST">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="cat-codigo">Código</label>
+                        <input class="input" id="cat-codigo" type="text" name="codigo" placeholder="320">
+                        <div class="helper-text">Opcional — o mesmo código da planilha.</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cat-tipo">Tipo</label>
+                        <select class="select" id="cat-tipo" name="tipo" required>
+                            <option value="custo">Custo</option>
+                            <option value="receita">Receita</option>
+                        </select>
+                    </div>
+
+                    <div class="full">
+                        <div class="form-group">
+                            <label for="cat-nome">Nome da categoria</label>
+                            <input class="input" id="cat-nome" type="text" name="nome"
+                                   placeholder="Aluguel de Container" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="callout">
+                    {{ icon('info') }}
+                    <div>A categoria passa a valer para <strong>todas as obras</strong> — o plano de contas
+                         é único no sistema, igual à planilha.</div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-light" type="button" onclick="closeModal('modalCategoria')">Cancelar</button>
+                <button class="btn btn-primary" type="submit">Salvar categoria</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

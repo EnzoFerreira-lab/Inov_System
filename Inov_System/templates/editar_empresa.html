@@ -1,69 +1,61 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editar Empresa - INOV</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
-</head>
-<body>
+{% extends 'base.html' %}
 {% set ativo = 'empresas' %}
-<div class="app-layout">
-    {% include '_sidebar.html' %}
+{% from '_icons.html' import icon %}
 
-    <main class="main">
-        <div class="topbar">
-            <div>
-                <h1>Editar Empresa</h1>
-                <p>{{ empresa["nome"] }}</p>
+{% block titulo %}Editar Empresa{% endblock %}
+
+{% block trilha %}
+    <nav class="breadcrumb">
+        <a href="{{ url_for('empresas') }}">Empresas</a> / <span>{{ empresa["nome"] }}</span>
+    </nav>
+{% endblock %}
+
+{% block cabecalho %}Editar empresa{% endblock %}
+{% block descricao %}{{ empresa["nome"] }}{% endblock %}
+
+{% block acoes %}
+    <a href="{{ url_for('empresas') }}" class="btn btn-light">{{ icon('voltar') }} Voltar</a>
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="card narrow">
+    <div class="card-header">
+        <div><h2>Dados da empresa</h2></div>
+    </div>
+
+    <div>
+        <form method="POST">
+            <div class="form-group">
+                <label for="emp-nome">Nome da empresa</label>
+                <input class="input" id="emp-nome" type="text" name="nome" value="{{ empresa['nome'] }}" required>
             </div>
-            <div class="topbar-actions">
-                <a href="/empresas" class="btn btn-light">Voltar</a>
+
+            <div class="form-group">
+                <label for="cnpj">CNPJ</label>
+                <input class="input" type="text" id="cnpj" name="cnpj"
+                       value="{{ empresa['cnpj'] or '' }}" placeholder="00.000.000/0000-00">
             </div>
-        </div>
 
-        <div class="flash-messages">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for categoria, mensagem in messages %}
-                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
-
-        <div class="card" style="max-width: 600px;">
-            <form method="POST">
-                <div class="form-grid">
-                    <div class="full">
-                        <div class="form-group">
-                            <label>Nome da empresa</label>
-                            <input class="input" type="text" name="nome" value="{{ empresa['nome'] }}" required>
-                        </div>
-                    </div>
-                    <div class="full">
-                        <div class="form-group">
-                            <label>CNPJ</label>
-                            <input class="input" type="text" id="cnpj" name="cnpj" value="{{ empresa['cnpj'] or '' }}" placeholder="00.000.000/0000-00">
-                        </div>
-                    </div>
-                </div>
-
+            <div class="form-actions">
                 <button class="btn btn-primary" type="submit">Salvar alterações</button>
-            </form>
-        </div>
-
-        <div class="card" style="max-width: 600px; margin-top: 16px; border-color: #f3c8c8;">
-            <h3 style="margin-top:0;">Zona de risco</h3>
-            <p class="helper-text">Só é possível excluir uma empresa se ela não tiver nenhuma obra vinculada.</p>
-            <form method="POST" action="/empresas/{{ empresa['id'] }}/excluir"
-                  onsubmit="return confirm('Tem certeza que quer excluir esta empresa? Essa ação não pode ser desfeita.');">
-                <button class="btn btn-danger" type="submit">Excluir empresa</button>
-            </form>
-        </div>
-    </main>
+                <a class="btn btn-light" href="{{ url_for('empresas') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
 </div>
 
-</body>
-</html>
+<div class="card narrow danger-zone">
+    <div>
+        <h3>Zona de risco</h3>
+        <p class="helper-text mb-2">
+            Só é possível excluir uma empresa que não tenha nenhuma obra vinculada.
+        </p>
+        <form method="POST" action="{{ url_for('excluir_empresa', empresa_id=empresa['id']) }}"
+              onsubmit="return confirm('Excluir a empresa {{ empresa['nome'] }}? Essa ação não pode ser desfeita.');">
+            <button class="btn btn-danger" type="submit">Excluir empresa</button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

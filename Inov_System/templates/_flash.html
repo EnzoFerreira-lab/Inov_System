@@ -1,0 +1,13 @@
+{% from '_icons.html' import icon %}
+{% with mensagens = get_flashed_messages(with_categories=true) %}
+    {% if mensagens %}
+        <div class="flash-messages">
+            {% for categoria, mensagem in mensagens %}
+                <div class="flash {{ categoria }}">
+                    {{ icon('sucesso' if categoria == 'sucesso' else 'erro') }}
+                    <span>{{ mensagem }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}

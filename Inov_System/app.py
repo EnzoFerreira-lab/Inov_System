@@ -8,7 +8,12 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import conectar, criar_tabelas
-from dre import calcular_dre_obra, calcular_dre_consolidado, buscar_saldos_anteriores
+from dre import (
+    calcular_dre_obra,
+    calcular_dre_consolidado,
+    buscar_saldos_anteriores,
+    CAMPOS_TOTAIS,
+)
 from dre_import import importar_planilha_dre_real
 from dre_export import gerar_excel_dre_obra, gerar_excel_dre_consolidado
 
@@ -27,6 +32,89 @@ MESES_NOME = [
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ]
 
+MESES_ABREV = [
+    "", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+    "Jul", "Ago", "Set", "Out", "Nov", "Dez",
+]
+
+
+# ---------------------------------------------------------------------------
+# Formatação — tudo que aparece na tela usa o padrão brasileiro (1.234,56).
+# O Python formata como 1,234.56, então trocamos os separadores de posição.
+# ---------------------------------------------------------------------------
+
+@app.template_filter("moeda")
+def filtro_moeda(valor, casas=2):
+    """1234.5 -> '1.234,50'. Sem o 'R$', que fica a cargo do template."""
+    try:
+        valor = float(valor or 0)
+    except (TypeError, ValueError):
+        return "0,00"
+
+    texto = f"{abs(valor):,.{casas}f}"
+    texto = texto.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+    return f"-{texto}" if valor < 0 else texto
+
+
+@app.template_filter("moeda_curta")
+def filtro_moeda_curta(valor):
+    """Versão compacta para cartões de indicador: 1482310.55 -> '1,48 mi'."""
+    try:
+        valor = float(valor or 0)
+    except (TypeError, ValueError):
+        return "0,00"
+
+    sinal = "-" if valor < 0 else ""
+    absoluto = abs(valor)
+
+    if absoluto >= 1_000_000:
+        return f"{sinal}{filtro_moeda(absoluto / 1_000_000)} mi"
+    if absoluto >= 1_000:
+        return f"{sinal}{filtro_moeda(absoluto / 1_000, 1)} mil"
+    return f"{sinal}{filtro_moeda(absoluto)}"
+
+
+@app.template_filter("pct")
+def filtro_percentual(valor, casas=1):
+    """0.1315 já em pontos percentuais (13.15) -> '13,2%'."""
+    try:
+        valor = float(valor or 0)
+    except (TypeError, ValueError):
+        return "0,0%"
+    return f"{filtro_moeda(valor, casas)}%"
+
+
+@app.template_filter("data_br")
+def filtro_data_br(valor):
+    """'2026-06-01' -> '01/06/2026'. Devolve o original se não for uma data ISO."""
+    if not valor:
+        return "—"
+    partes = str(valor)[:10].split("-")
+    if len(partes) != 3:
+        return str(valor)
+    ano, mes, dia = partes
+    return f"{dia}/{mes}/{ano}"
+
+
+@app.template_filter("competencia_br")
+def filtro_competencia_br(valor):
+    """'2026-06' -> 'Jun/2026' (usado nas vigências de taxa)."""
+    if not valor:
+        return "—"
+    partes = str(valor).split("-")
+    if len(partes) < 2:
+        return str(valor)
+    try:
+        return f"{MESES_ABREV[int(partes[1])]}/{partes[0]}"
+    except (ValueError, IndexError):
+        return str(valor)
+
+
+app.jinja_env.globals.update(
+    meses_nome=MESES_NOME,
+    meses_abrev=MESES_ABREV,
+)
+
 
 def criar_pastas():
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -44,6 +132,35 @@ def exigir_login():
     if not usuario_logado():
         return redirect(url_for("login"))
     return None
+
+
+def parse_valor_br(texto):
+    """
+    Converte o que o usuário digitou num float, aceitando os formatos que
+    aparecem na prática: '1234.56', '1234,56', '1.234,56' e 'R$ 1.234,56'.
+    Devolve 0.0 quando o campo está vazio ou ilegível — um valor inválido não
+    pode derrubar o salvamento da grade inteira.
+    """
+    if texto is None:
+        return 0.0
+
+    limpo = re.sub(r"[^\d,.\-]", "", str(texto)).strip()
+    if not limpo:
+        return 0.0
+
+    # Quando aparecem os dois separadores, o último é o decimal.
+    if "," in limpo and "." in limpo:
+        if limpo.rfind(",") > limpo.rfind("."):
+            limpo = limpo.replace(".", "").replace(",", ".")
+        else:
+            limpo = limpo.replace(",", "")
+    elif "," in limpo:
+        limpo = limpo.replace(",", ".")
+
+    try:
+        return abs(float(limpo))
+    except ValueError:
+        return 0.0
 
 
 def arquivo_permitido(filename):
@@ -116,23 +233,66 @@ def dashboard():
     obra_ids = [o["id"] for o in obras]
     meses = meses_do_ano(ano_atual)
     resultado = calcular_dre_consolidado(obra_ids, meses) if obra_ids else {
-        "totais": {c: {"receita_total": 0, "custos_total": 0, "lucro_bruto": 0, "lucro_liquido": 0} for c in meses},
-        "acumulado": {"receita_total": 0, "custos_total": 0, "lucro_bruto": 0, "lucro_liquido": 0},
+        "totais": {c: {campo: 0 for campo in CAMPOS_TOTAIS} for c in meses},
+        "acumulado": {campo: 0 for campo in CAMPOS_TOTAIS},
+        "por_obra": {},
     }
 
-    labels = [f"{m:02d}/{a}" for a, m in meses]
-    valores = [round(resultado["totais"][c]["lucro_liquido"], 2) for c in meses]
+    acumulado = resultado["acumulado"]
+
+    # Ranking: só entram obras que tiveram movimento no ano. Sem esse filtro, as
+    # piores posições ficariam ocupadas por obras zeradas, que não dizem nada.
+    ranking = []
+    for obra in obras:
+        valores = resultado["por_obra"].get(obra["id"])
+        if not valores or (not valores["receita_total"] and not valores["custos_total"]):
+            continue
+        receita = valores["receita_total"]
+        ranking.append({
+            "id": obra["id"],
+            "nome": obra["nome"],
+            "codigo": obra["codigo"],
+            "receita": receita,
+            "lucro_liquido": valores["lucro_liquido"],
+            "margem": (valores["lucro_liquido"] / receita * 100) if receita else 0.0,
+        })
+
+    ranking.sort(key=lambda o: o["lucro_liquido"], reverse=True)
+    melhores = ranking[:6]
+    piores = sorted(ranking[-6:], key=lambda o: o["lucro_liquido"])
+
+    # Escala das barrinhas do ranking — proporcional ao maior valor absoluto.
+    maior_absoluto = max((abs(o["lucro_liquido"]) for o in ranking), default=0) or 1
+
+    margem_liquida = (acumulado["lucro_liquido"] / acumulado["receita_total"] * 100) \
+        if acumulado["receita_total"] else 0.0
+    margem_bruta = (acumulado["lucro_bruto"] / acumulado["receita_total"] * 100) \
+        if acumulado["receita_total"] else 0.0
+
+    meses_com_dado = [
+        c for c in meses
+        if resultado["totais"][c]["receita_total"] or resultado["totais"][c]["custos_total"]
+    ]
 
     return render_template(
         "dashboard.html",
-        obras=obras[:8],
         ano_atual=ano_atual,
-        receita_bruta=resultado["acumulado"]["receita_total"],
-        custos=resultado["acumulado"]["custos_total"],
-        lucro_bruto=resultado["acumulado"]["lucro_bruto"],
-        resultado_liquido=resultado["acumulado"]["lucro_liquido"],
-        labels=labels,
-        valores=valores,
+        acumulado=acumulado,
+        margem_liquida=margem_liquida,
+        margem_bruta=margem_bruta,
+        total_obras=len(obras),
+        obras_ativas=sum(1 for o in obras if o["status"] != "encerrada"),
+        obras_com_movimento=len(ranking),
+        meses_com_dado=len(meses_com_dado),
+        melhores=melhores,
+        piores=piores,
+        maior_absoluto=maior_absoluto,
+        grafico={
+            "labels": [MESES_ABREV[m] for _, m in meses],
+            "receita": [round(resultado["totais"][c]["receita_total"], 2) for c in meses],
+            "custos": [round(resultado["totais"][c]["custos_total"], 2) for c in meses],
+            "liquido": [round(resultado["totais"][c]["lucro_liquido"], 2) for c in meses],
+        },
     )
 
 
@@ -640,9 +800,7 @@ def lancamentos_manual():
         agora = datetime.datetime.now().isoformat()
 
         for categoria_id in categoria_ids:
-            campo = f"valor_{categoria_id}"
-            valor_raw = request.form.get(campo, "").strip().replace(",", ".")
-            valor = abs(float(valor_raw)) if valor_raw else 0.0
+            valor = parse_valor_br(request.form.get(f"valor_{categoria_id}"))
 
             cur.execute("""
                 INSERT INTO lancamentos (obra_id, categoria_id, mes, ano, valor, origem, atualizado_em)

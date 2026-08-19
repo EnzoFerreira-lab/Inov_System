@@ -1,19 +1,71 @@
+/* ==========================================================================
+   INOV System — folha de estilo única
+   Direção: sóbria/contábil. Densidade alta, tipografia com números tabulares,
+   paleta neutra com azul institucional. Feita para quem passa o dia em planilha.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Tokens
+   -------------------------------------------------------------------------- */
+
 :root{
-    --bg: #f4f7fb;
-    --sidebar: #111827;
-    --sidebar-light: #1f2937;
-    --card: #ffffff;
-    --text: #111827;
-    --muted: #6b7280;
-    --border: #e5e7eb;
-    --primary: #1d4ed8;
-    --primary-hover: #1e40af;
-    --success: #16a34a;
-    --danger: #dc2626;
-    --warning: #f59e0b;
-    --shadow: 0 10px 25px rgba(17, 24, 39, 0.08);
-    --radius: 18px;
+    /* Superfícies */
+    --bg: #f1f5f9;
+    --surface: #ffffff;
+    --surface-2: #f8fafc;
+    --surface-3: #f1f5f9;
+
+    /* Traços */
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+
+    /* Texto */
+    --text: #0f172a;
+    --text-2: #475569;
+    --text-3: #94a3b8;
+
+    /* Marca */
+    --brand: #1e40af;
+    --brand-hover: #1c3aa0;
+    --brand-soft: #eff6ff;
+    --brand-soft-hover: #dbeafe;
+    --brand-text: #1d4ed8;
+
+    /* Semântica contábil */
+    --pos: #15803d;
+    --pos-soft: #f0fdf4;
+    --neg: #b91c1c;
+    --neg-soft: #fef2f2;
+    --warn: #b45309;
+    --warn-soft: #fffbeb;
+
+    /* Barra lateral */
+    --side-bg: #0f172a;
+    --side-fg: #94a3b8;
+    --side-fg-strong: #f8fafc;
+    --side-hover: rgba(148, 163, 184, 0.10);
+    --side-active: rgba(59, 130, 246, 0.16);
+    --side-border: rgba(148, 163, 184, 0.14);
+
+    /* Forma */
+    --r-sm: 4px;
+    --r: 6px;
+    --r-lg: 8px;
+
+    /* Profundidade — discreta por opção de projeto */
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-lg: 0 10px 32px rgba(15, 23, 42, 0.16);
+
+    /* Métrica */
+    --side-w: 232px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-num: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
 }
+
+/* --------------------------------------------------------------------------
+   2. Base
+   -------------------------------------------------------------------------- */
 
 *{
     margin: 0;
@@ -21,16 +73,23 @@
     box-sizing: border-box;
 }
 
-html, body{
-    height: 100%;
-    font-family: Arial, Helvetica, sans-serif;
+html{
+    -webkit-text-size-adjust: 100%;
+}
+
+body{
+    min-height: 100vh;
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
     background: var(--bg);
     color: var(--text);
+    -webkit-font-smoothing: antialiased;
 }
 
 a{
-    text-decoration: none;
     color: inherit;
+    text-decoration: none;
 }
 
 button,
@@ -38,382 +97,698 @@ input,
 select,
 textarea{
     font: inherit;
+    color: inherit;
 }
 
-body.auth-body{
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background:
-        linear-gradient(135deg, rgba(29, 78, 216, 0.08), rgba(17, 24, 39, 0.12)),
-        #eef2ff;
-}
-
-.login-container{
-    width: 100%;
-    max-width: 430px;
-    background: #fff;
-    border-radius: 24px;
-    box-shadow: 0 30px 60px rgba(0,0,0,0.10);
-    padding: 36px;
-}
-
-.login-brand{
-    text-align: center;
-    margin-bottom: 28px;
-}
-
-.login-brand .logo{
-    width: 68px;
-    height: 68px;
-    margin: 0 auto 14px;
-    border-radius: 18px;
-    background: linear-gradient(135deg, var(--primary), #0f172a);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 26px;
-    font-weight: bold;
-}
-
-.login-brand h1{
-    font-size: 28px;
-    margin-bottom: 6px;
-}
-
-.login-brand p{
-    color: var(--muted);
-    font-size: 14px;
-}
-
-.form-group{
-    margin-bottom: 16px;
-}
-
-.form-group label{
-    display: block;
-    margin-bottom: 8px;
-    font-size: 14px;
-    color: #374151;
+h1, h2, h3, h4{
     font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
 }
 
-.input,
-.select,
-.textarea{
-    width: 100%;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 14px 15px;
-    outline: none;
-    background: #fff;
-    transition: 0.2s;
+svg{
+    display: block;
+    flex-shrink: 0;
 }
 
-.input:focus,
-.select:focus,
-.textarea:focus{
-    border-color: var(--primary);
-    box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.10);
+/* Todo número do sistema usa largura fixa de dígito — colunas de valor alinham
+   verticalmente mesmo com dígitos diferentes. É o detalhe que separa uma tela
+   contábil legível de uma ilegível. */
+.num,
+.table td,
+.dre td,
+.dre th,
+.metric-value,
+input[type="number"],
+input[type="text"].money-input{
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
 }
 
-.btn{
-    border: none;
-    border-radius: 14px;
-    padding: 13px 18px;
-    cursor: pointer;
-    transition: 0.2s;
-    font-weight: bold;
-}
-
-.btn-primary{
-    background: var(--primary);
-    color: white;
-}
-
-.btn-primary:hover{
-    background: var(--primary-hover);
-}
-
-.btn-dark{
-    background: #111827;
-    color: white;
-}
-
-.btn-dark:hover{
-    background: #0b1220;
-}
-
-.btn-light{
-    background: #eff6ff;
-    color: var(--primary);
-}
-
-.btn-light:hover{
-    background: #dbeafe;
-}
-
-.btn-success{
-    background: var(--success);
-    color: white;
-}
-
-.btn-success:hover{
-    filter: brightness(0.95);
-}
-
-.btn-danger{
-    background: var(--danger);
-    color: white;
-}
-
-.flash-messages{
-    margin-bottom: 18px;
-}
-
-.flash{
-    padding: 12px 14px;
-    border-radius: 12px;
-    margin-bottom: 10px;
-    font-size: 14px;
-}
-
-.flash.sucesso{
-    background: #dcfce7;
-    color: #166534;
-}
-
-.flash.erro{
-    background: #fee2e2;
-    color: #991b1b;
-}
+/* --------------------------------------------------------------------------
+   3. Layout da aplicação
+   -------------------------------------------------------------------------- */
 
 .app-layout{
     display: flex;
     min-height: 100vh;
 }
 
+.main{
+    flex: 1;
+    min-width: 0;
+    margin-left: var(--side-w);
+    padding: 20px 24px 48px;
+}
+
+/* --------------------------------------------------------------------------
+   4. Barra lateral
+   -------------------------------------------------------------------------- */
+
 .sidebar{
-    width: 270px;
-    background: linear-gradient(180deg, var(--sidebar), #0b1220);
-    color: white;
-    padding: 22px 18px;
-    display: flex;
-    flex-direction: column;
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
+    width: var(--side-w);
+    display: flex;
+    flex-direction: column;
+    background: var(--side-bg);
+    color: var(--side-fg);
+    overflow-y: auto;
 }
 
 .sidebar-brand{
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 10px 22px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    margin-bottom: 22px;
+    gap: 10px;
+    padding: 18px 16px;
+    border-bottom: 1px solid var(--side-border);
 }
 
 .sidebar-brand .logo{
-    width: 46px;
-    height: 46px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #2563eb, #60a5fa);
+    width: 34px;
+    height: 34px;
+    border-radius: var(--r);
+    background: var(--brand-text);
+    color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: bold;
-    font-size: 18px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
 }
 
 .sidebar-brand-text h2{
-    font-size: 18px;
-    margin-bottom: 2px;
+    font-size: 14px;
+    color: var(--side-fg-strong);
+    letter-spacing: 0.04em;
 }
 
 .sidebar-brand-text span{
-    font-size: 12px;
-    color: #9ca3af;
+    display: block;
+    font-size: 11px;
+    color: var(--side-fg);
 }
 
 .sidebar-nav{
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 1px;
+    padding: 12px 10px;
+}
+
+.nav-section{
+    padding: 14px 8px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #64748b;
 }
 
 .nav-link{
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 14px 14px;
-    border-radius: 14px;
-    color: #d1d5db;
-    transition: 0.2s;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--r);
+    font-size: 13.5px;
+    color: var(--side-fg);
+    transition: background 0.12s, color 0.12s;
+}
+
+.nav-link svg{
+    width: 17px;
+    height: 17px;
+    opacity: 0.75;
 }
 
 .nav-link:hover{
-    background: rgba(255,255,255,0.08);
-    color: white;
+    background: var(--side-hover);
+    color: var(--side-fg-strong);
 }
 
 .nav-link.active{
-    background: rgba(37, 99, 235, 0.22);
-    color: white;
+    background: var(--side-active);
+    color: var(--side-fg-strong);
+    font-weight: 500;
+}
+
+.nav-link.active svg{
+    opacity: 1;
+    color: #60a5fa;
 }
 
 .sidebar-footer{
     margin-top: auto;
-    border-top: 1px solid rgba(255,255,255,0.08);
-    padding-top: 18px;
+    padding: 12px 10px 14px;
+    border-top: 1px solid var(--side-border);
 }
 
 .user-box{
-    background: rgba(255,255,255,0.06);
-    border-radius: 16px;
-    padding: 14px;
-    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+}
+
+.user-avatar{
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--side-hover);
+    color: var(--side-fg-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
 }
 
 .user-box strong{
     display: block;
-    font-size: 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--side-fg-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .user-box span{
-    color: #9ca3af;
-    font-size: 12px;
+    font-size: 11px;
+    color: var(--side-fg);
 }
 
 .logout-link{
-    display: block;
-    text-align: center;
-    padding: 12px;
-    border-radius: 12px;
-    background: rgba(220, 38, 38, 0.18);
-    color: #fecaca;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--r);
+    font-size: 13px;
+    color: var(--side-fg);
+    transition: background 0.12s, color 0.12s;
 }
 
-.main{
-    margin-left: 270px;
-    width: calc(100% - 270px);
-    padding: 28px;
+.logout-link svg{
+    width: 16px;
+    height: 16px;
+    opacity: 0.75;
 }
+
+.logout-link:hover{
+    background: var(--side-hover);
+    color: #fca5a5;
+}
+
+/* --------------------------------------------------------------------------
+   5. Cabeçalho de página
+   -------------------------------------------------------------------------- */
 
 .topbar{
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    box-shadow: var(--shadow);
-    padding: 20px 22px;
-    margin-bottom: 24px;
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    gap: 18px;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 16px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--border);
 }
 
 .topbar h1{
-    font-size: 28px;
-    margin-bottom: 4px;
+    font-size: 20px;
+    margin-bottom: 3px;
 }
 
 .topbar p{
-    color: var(--muted);
-    font-size: 14px;
+    font-size: 13px;
+    color: var(--text-2);
+    max-width: 78ch;
 }
 
 .topbar-actions{
     display: flex;
-    gap: 12px;
+    align-items: center;
+    gap: 8px;
     flex-wrap: wrap;
 }
 
-.cards-grid{
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 18px;
-    margin-bottom: 24px;
+.breadcrumb{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--text-3);
 }
+
+.breadcrumb a:hover{
+    color: var(--brand-text);
+}
+
+/* --------------------------------------------------------------------------
+   6. Cartões
+   -------------------------------------------------------------------------- */
 
 .card{
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 22px;
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
 }
 
-.metric-card small{
-    color: var(--muted);
-    display: block;
-    margin-bottom: 10px;
-    font-size: 13px;
+.card > *{
+    padding: 16px 18px;
 }
 
-.metric-card h3{
-    font-size: 30px;
-    margin-bottom: 8px;
+.card > .card-header + *{
+    padding-top: 0;
 }
 
-.metric-card span{
-    font-size: 13px;
-    color: var(--muted);
+/* Tabelas e listas encostam nas bordas do cartão. Nos contêineres de rolagem
+   isso é obrigatório: com padding, o conteúdo apareceria por baixo do
+   cabeçalho fixo em vez de sumir atrás dele. */
+.card > .table-wrap,
+.card > .dre-wrap,
+.card > .rank-list,
+.card > table,
+.card > form{
+    padding: 0;
 }
 
-.dashboard-grid{
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 20px;
+/* Blocos soltos dentro de um cartão que já teve o padding zerado */
+.card-section{
+    padding: 16px 18px;
 }
 
 .card-header{
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 18px;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
 }
 
 .card-header h2{
-    font-size: 20px;
+    font-size: 14px;
+    font-weight: 600;
 }
 
 .card-header p{
-    color: var(--muted);
-    font-size: 13px;
+    margin-top: 2px;
+    font-size: 12.5px;
+    color: var(--text-2);
+    max-width: 90ch;
 }
 
-.quick-list{
+.card-header-actions{
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.quick-item{
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 14px;
-    display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
-.quick-item-info h4{
+.card + .card{
+    margin-top: 16px;
+}
+
+.card.danger-zone{
+    border-color: #fecaca;
+}
+
+.card.danger-zone h3{
+    font-size: 13.5px;
+    color: var(--neg);
     margin-bottom: 4px;
-    font-size: 15px;
 }
 
-.quick-item-info span{
-    color: var(--muted);
+/* --------------------------------------------------------------------------
+   7. Cartões de indicador
+   -------------------------------------------------------------------------- */
+
+.cards-grid{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.metric-card{
+    padding: 14px 16px;
+}
+
+.metric-card .metric-label{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 8px;
+}
+
+.metric-value{
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+}
+
+.metric-value .currency{
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-3);
+    margin-right: 3px;
+}
+
+.metric-card .metric-foot{
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-2);
+}
+
+/* Faixa colorida no topo indica o papel do número no DRE */
+.metric-card{
+    position: relative;
+    overflow: hidden;
+}
+
+.metric-card::before{
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: var(--border-strong);
+}
+
+.metric-card.is-receita::before{ background: #3b82f6; }
+.metric-card.is-custo::before{ background: #f97316; }
+.metric-card.is-bruto::before{ background: #8b5cf6; }
+.metric-card.is-liquido::before{ background: var(--pos); }
+.metric-card.is-liquido.is-negative::before{ background: var(--neg); }
+
+/* --------------------------------------------------------------------------
+   8. Valores
+   -------------------------------------------------------------------------- */
+
+.valor-pos{ color: var(--pos); }
+.valor-neg{ color: var(--neg); }
+.valor-zero{ color: var(--text-3); }
+
+.delta{
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.delta.up{ color: var(--pos); }
+.delta.down{ color: var(--neg); }
+
+/* --------------------------------------------------------------------------
+   9. Botões
+   -------------------------------------------------------------------------- */
+
+.btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    border-radius: var(--r);
+    padding: 7px 13px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.btn svg{
+    width: 15px;
+    height: 15px;
+}
+
+.btn:disabled{
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary{
+    background: var(--brand);
+    color: #fff;
+}
+
+.btn-primary:hover{
+    background: var(--brand-hover);
+}
+
+.btn-light{
+    background: var(--surface);
+    border-color: var(--border-strong);
+    color: var(--text-2);
+}
+
+.btn-light:hover{
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.btn-soft{
+    background: var(--brand-soft);
+    color: var(--brand-text);
+}
+
+.btn-soft:hover{
+    background: var(--brand-soft-hover);
+}
+
+.btn-dark{
+    background: var(--text);
+    color: #fff;
+}
+
+.btn-dark:hover{
+    background: #1e293b;
+}
+
+.btn-danger{
+    background: var(--neg);
+    color: #fff;
+}
+
+.btn-danger:hover{
+    background: #991b1b;
+}
+
+.btn-sm{
+    padding: 4px 9px;
+    font-size: 12.5px;
+}
+
+.btn-sm svg{
+    width: 13px;
+    height: 13px;
+}
+
+.btn-block{
+    width: 100%;
+}
+
+/* Botão que é só um link discreto dentro de tabela */
+.btn-link{
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    color: var(--brand-text);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.btn-link:hover{
+    text-decoration: underline;
+}
+
+.row-actions{
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    justify-content: flex-end;
+}
+
+/* --------------------------------------------------------------------------
+   10. Formulários
+   -------------------------------------------------------------------------- */
+
+.form-group{
+    margin-bottom: 14px;
+}
+
+.form-group:last-child{
+    margin-bottom: 0;
+}
+
+.form-group label,
+.label{
+    display: block;
+    margin-bottom: 5px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-2);
+}
+
+.input,
+.select,
+.textarea{
+    width: 100%;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    padding: 7px 10px;
+    font-size: 13.5px;
+    background: var(--surface);
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.input::placeholder{
+    color: var(--text-3);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus{
+    border-color: var(--brand-text);
+    box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+
+.input:disabled,
+.select:disabled{
+    background: var(--surface-3);
+    color: var(--text-2);
+}
+
+.select{
+    appearance: none;
+    padding-right: 30px;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 9px center;
+}
+
+.textarea{
+    min-height: 90px;
+    resize: vertical;
+}
+
+.input-sm{
+    padding: 5px 9px;
     font-size: 13px;
 }
 
-.table-card{
+.select.input-sm{
+    padding-right: 28px;
+}
+
+.form-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 16px;
+}
+
+.form-grid .full{
+    grid-column: 1 / -1;
+}
+
+.form-inline{
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.form-inline .form-group{
+    margin-bottom: 0;
+}
+
+.form-actions{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.helper-text{
+    font-size: 12.5px;
+    color: var(--text-2);
+}
+
+.form-group .helper-text{
+    margin-top: 5px;
+}
+
+/* Campo de busca com lupa */
+.search-field{
+    position: relative;
+    min-width: 240px;
+}
+
+.search-field svg{
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    color: var(--text-3);
+    pointer-events: none;
+}
+
+.search-field .input{
+    padding-left: 30px;
+}
+
+.filter-bar{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-bar .select{
+    width: auto;
+    min-width: 150px;
+}
+
+.filter-count{
+    font-size: 12.5px;
+    color: var(--text-3);
+    white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   11. Tabelas
+   -------------------------------------------------------------------------- */
+
+.table-wrap{
     overflow-x: auto;
 }
 
@@ -425,208 +800,741 @@ body.auth-body{
 .table th,
 .table td{
     text-align: left;
-    padding: 14px 12px;
+    padding: 9px 14px;
+    font-size: 13px;
     border-bottom: 1px solid var(--border);
-    font-size: 14px;
 }
 
-.table th{
-    color: #374151;
-    font-size: 13px;
-    background: #f9fafb;
+.table thead th{
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface-2);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-2);
+    white-space: nowrap;
 }
+
+.table tbody tr:last-child td{
+    border-bottom: none;
+}
+
+.table tbody tr:hover{
+    background: var(--surface-2);
+}
+
+.table td.num,
+.table th.num{
+    text-align: right;
+}
+
+.table td.shrink,
+.table th.shrink{
+    width: 1%;
+    white-space: nowrap;
+}
+
+.table .mono{
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--text-2);
+}
+
+.table .primary-cell{
+    font-weight: 500;
+}
+
+.table .sub{
+    display: block;
+    font-size: 12px;
+    color: var(--text-3);
+}
+
+tr.is-hidden{
+    display: none;
+}
+
+/* --------------------------------------------------------------------------
+   12. Tabela do DRE
+   -------------------------------------------------------------------------- */
+
+.dre-wrap{
+    overflow: auto;
+    max-height: calc(100vh - 210px);
+}
+
+table.dre{
+    width: 100%;
+    min-width: 1240px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12.5px;
+}
+
+table.dre th,
+table.dre td{
+    padding: 6px 12px;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+}
+
+/* Cabeçalho fixo na rolagem vertical */
+table.dre thead th{
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--surface-2);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-2);
+    border-bottom: 1px solid var(--border-strong);
+}
+
+/* Coluna de categoria fixa na rolagem horizontal */
+table.dre th:first-child,
+table.dre td:first-child{
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 264px;
+    max-width: 264px;
+    text-align: left;
+    white-space: normal;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+}
+
+table.dre thead th:first-child{
+    z-index: 4;
+    background: var(--surface-2);
+}
+
+/* Última coluna (acumulado) destacada */
+table.dre th:last-child,
+table.dre td:last-child{
+    background: var(--surface-2);
+    font-weight: 600;
+    border-left: 1px solid var(--border);
+}
+
+table.dre tbody tr:hover td{
+    background: var(--brand-soft);
+}
+
+table.dre tbody tr:hover td:first-child,
+table.dre tbody tr:hover td:last-child{
+    background: #e5edfd;
+}
+
+/* Cabeçalho de grupo (Receitas Brutas / Custos) */
+table.dre tr.grupo td{
+    padding-top: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-2);
+    background: var(--surface-3);
+}
+
+table.dre tr.grupo td:first-child,
+table.dre tr.grupo td:last-child{
+    background: var(--surface-3);
+}
+
+/* Linha de subtotal */
+table.dre tr.subtotal td{
+    font-weight: 600;
+    background: var(--surface-2);
+    border-top: 1px solid var(--border-strong);
+    border-bottom: 1px solid var(--border-strong);
+}
+
+table.dre tr.subtotal td:first-child,
+table.dre tr.subtotal td:last-child{
+    background: var(--surface-2);
+}
+
+/* Linha de dedução (as 4 taxas) */
+table.dre tr.deducao td:first-child{
+    color: var(--text-2);
+    padding-left: 24px;
+}
+
+/* Linha de resultado final */
+table.dre tr.resultado td{
+    padding-top: 10px;
+    padding-bottom: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    background: #1e293b;
+    color: #f8fafc;
+    border-top: 2px solid var(--text);
+    border-bottom: none;
+}
+
+table.dre tr.resultado td:first-child,
+table.dre tr.resultado td:last-child{
+    background: #1e293b;
+    border-color: rgba(248, 250, 252, 0.15);
+    letter-spacing: 0.02em;
+}
+
+table.dre tr.resultado .valor-neg{ color: #fca5a5; }
+table.dre tr.resultado .valor-pos{ color: #86efac; }
+
+table.dre tr.resultado:hover td{
+    background: #1e293b;
+}
+
+/* Zeros ficam discretos para o olho achar o que tem valor */
+table.dre td.zero{
+    color: #cbd5e1;
+}
+
+.cat-code{
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Legenda abaixo da tabela */
+.table-legend{
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 10px 18px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-3);
+}
+
+/* --------------------------------------------------------------------------
+   13. Selos
+   -------------------------------------------------------------------------- */
 
 .badge{
-    display: inline-block;
-    padding: 8px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: bold;
-}
-
-.badge.primary{
-    background: #dbeafe;
-    color: #1d4ed8;
-}
-
-.badge.success{
-    background: #dcfce7;
-    color: #166534;
-}
-
-.badge.warning{
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.badge.danger{
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.page-actions{
-    display: flex;
-    justify-content: space-between;
+    display: inline-flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    white-space: nowrap;
 }
 
-.search-bar{
+.badge::before{
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.badge.no-dot::before{
+    display: none;
+}
+
+.badge.primary{ background: var(--brand-soft); color: var(--brand-text); }
+.badge.success{ background: var(--pos-soft); color: var(--pos); }
+.badge.warning{ background: var(--warn-soft); color: var(--warn); }
+.badge.danger{ background: var(--neg-soft); color: var(--neg); }
+.badge.neutral{ background: var(--surface-3); color: var(--text-2); }
+
+/* --------------------------------------------------------------------------
+   14. Avisos
+   -------------------------------------------------------------------------- */
+
+.flash-messages{
+    margin-bottom: 16px;
+}
+
+.flash{
     display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 10px 13px;
+    margin-bottom: 8px;
+    border: 1px solid;
+    border-radius: var(--r);
+    font-size: 13px;
 }
 
-.search-bar .input{
-    min-width: 260px;
+.flash svg{
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
 }
+
+.flash.sucesso{
+    background: var(--pos-soft);
+    border-color: #bbf7d0;
+    color: #14532d;
+}
+
+.flash.erro{
+    background: var(--neg-soft);
+    border-color: #fecaca;
+    color: #7f1d1d;
+}
+
+.flash.aviso{
+    background: var(--warn-soft);
+    border-color: #fde68a;
+    color: #78350f;
+}
+
+.callout{
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--brand-text);
+    border-radius: var(--r);
+    background: var(--surface-2);
+    font-size: 12.5px;
+    color: var(--text-2);
+}
+
+.callout svg{
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    color: var(--brand-text);
+}
+
+.callout strong{
+    color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   15. Estado vazio
+   -------------------------------------------------------------------------- */
 
 .empty-state{
+    padding: 44px 24px;
     text-align: center;
-    padding: 40px 20px;
-    color: var(--muted);
 }
+
+.empty-state svg{
+    width: 30px;
+    height: 30px;
+    margin: 0 auto 12px;
+    color: var(--text-3);
+}
+
+.empty-state h3{
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.empty-state p{
+    font-size: 13px;
+    color: var(--text-2);
+    max-width: 44ch;
+    margin: 0 auto 14px;
+}
+
+/* --------------------------------------------------------------------------
+   16. Diálogo
+   -------------------------------------------------------------------------- */
 
 .modal{
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.55);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
+    z-index: 100;
+    background: rgba(15, 23, 42, 0.45);
+    padding: 24px;
+    overflow-y: auto;
 }
 
 .modal.show{
     display: flex;
+    align-items: flex-start;
+    justify-content: center;
 }
 
 .modal-content{
     width: 100%;
-    max-width: 650px;
-    background: white;
-    border-radius: 24px;
-    padding: 26px;
-    box-shadow: 0 25px 50px rgba(0,0,0,0.18);
-    max-height: 90vh;
-    overflow-y: auto;
+    max-width: 560px;
+    margin: auto;
+    background: var(--surface);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
 }
 
 .modal-header{
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
 }
 
 .modal-header h3{
-    font-size: 24px;
+    font-size: 15px;
+}
+
+.modal-body{
+    padding: 18px;
+}
+
+.modal-footer{
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 18px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 
 .close-btn{
-    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
     border: none;
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-    font-size: 18px;
+    border-radius: var(--r);
+    background: none;
+    color: var(--text-3);
     cursor: pointer;
 }
 
-.form-grid{
+.close-btn:hover{
+    background: var(--surface-3);
+    color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   17. Painel (dashboard)
+   -------------------------------------------------------------------------- */
+
+.dashboard-grid{
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
     gap: 16px;
-}
-
-.form-grid .full{
-    grid-column: 1 / -1;
-}
-
-.textarea{
-    min-height: 120px;
-    resize: vertical;
-}
-
-.upload-box{
-    border: 2px dashed #cbd5e1;
-    border-radius: 22px;
-    padding: 38px 24px;
-    text-align: center;
-    background: #f8fafc;
-}
-
-.upload-box h3{
-    margin-bottom: 10px;
-    font-size: 22px;
-}
-
-.upload-box p{
-    color: var(--muted);
-    margin-bottom: 18px;
-}
-
-.helper-text{
-    margin-top: 12px;
-    color: var(--muted);
-    font-size: 13px;
-}
-
-.section-title{
-    margin-bottom: 18px;
-}
-
-.section-title h2{
-    font-size: 24px;
-    margin-bottom: 6px;
-}
-
-.section-title p{
-    color: var(--muted);
+    align-items: start;
 }
 
 .chart-area{
-    width: 100%;
-    min-height: 320px;
+    position: relative;
+    height: 300px;
 }
 
-@media (max-width: 1200px){
-    .cards-grid{
-        grid-template-columns: repeat(2, 1fr);
-    }
+.rank-list{
+    display: flex;
+    flex-direction: column;
+}
 
+.rank-item{
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 18px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+}
+
+.rank-item:last-child{
+    border-bottom: none;
+}
+
+.rank-item:hover{
+    background: var(--surface-2);
+}
+
+.rank-pos{
+    width: 20px;
+    flex-shrink: 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.rank-info{
+    flex: 1;
+    min-width: 0;
+}
+
+.rank-info strong{
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rank-info span{
+    font-size: 11.5px;
+    color: var(--text-3);
+}
+
+.rank-value{
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+/* Barra de participação sob o nome da obra */
+.rank-bar{
+    height: 3px;
+    margin-top: 4px;
+    border-radius: 2px;
+    background: var(--surface-3);
+    overflow: hidden;
+}
+
+.rank-bar i{
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--brand-text);
+}
+
+.rank-bar.is-negative i{
+    background: var(--neg);
+}
+
+/* Abas simples (melhores / piores) */
+.tabs{
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--r);
+    background: var(--surface-3);
+}
+
+.tab-btn{
+    border: none;
+    background: none;
+    padding: 4px 11px;
+    border-radius: var(--r-sm);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-2);
+    cursor: pointer;
+}
+
+.tab-btn.active{
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-sm);
+}
+
+.tab-panel[hidden]{
+    display: none;
+}
+
+/* --------------------------------------------------------------------------
+   18. Envio de arquivo
+   -------------------------------------------------------------------------- */
+
+.upload-box{
+    padding: 32px 24px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--r-lg);
+    background: var(--surface-2);
+    text-align: center;
+    transition: border-color 0.12s, background 0.12s;
+}
+
+.upload-box.dragover{
+    border-color: var(--brand-text);
+    background: var(--brand-soft);
+}
+
+.upload-box svg{
+    width: 28px;
+    height: 28px;
+    margin: 0 auto 10px;
+    color: var(--text-3);
+}
+
+.upload-box h3{
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.upload-box p{
+    font-size: 13px;
+    color: var(--text-2);
+    margin-bottom: 16px;
+}
+
+.upload-box .file-row{
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    max-width: 460px;
+    margin: 0 auto;
+}
+
+.upload-box .input[type="file"]{
+    padding: 6px 10px;
+    font-size: 12.5px;
+}
+
+/* --------------------------------------------------------------------------
+   19. Login
+   -------------------------------------------------------------------------- */
+
+body.auth-body{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--side-bg);
+}
+
+.login-container{
+    width: 100%;
+    max-width: 380px;
+    padding: 32px;
+    background: var(--surface);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
+}
+
+.login-brand{
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.login-brand .logo{
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 14px;
+    border-radius: var(--r-lg);
+    background: var(--brand);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.login-brand h1{
+    font-size: 19px;
+    margin-bottom: 3px;
+}
+
+.login-brand p{
+    font-size: 13px;
+    color: var(--text-2);
+}
+
+.login-foot{
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-3);
+}
+
+/* --------------------------------------------------------------------------
+   20. Utilitários
+   -------------------------------------------------------------------------- */
+
+.stack{ display: flex; flex-direction: column; gap: 16px; }
+.row{ display: flex; align-items: center; gap: 8px; }
+.row-between{ display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.grow{ flex: 1; min-width: 0; }
+.text-right{ text-align: right; }
+.text-muted{ color: var(--text-2); }
+.text-faint{ color: var(--text-3); }
+.text-sm{ font-size: 12.5px; }
+.nowrap{ white-space: nowrap; }
+.mt-0{ margin-top: 0; }
+.mt-2{ margin-top: 16px; }
+.mb-2{ margin-bottom: 16px; }
+.narrow{ max-width: 620px; }
+
+.sr-only{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* --------------------------------------------------------------------------
+   21. Telas menores
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1280px){
     .dashboard-grid{
         grid-template-columns: 1fr;
     }
 }
 
+@media (max-width: 1024px){
+    .cards-grid{
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 900px){
+    .app-layout{
+        flex-direction: column;
+    }
+
     .sidebar{
         position: static;
         width: 100%;
         height: auto;
     }
 
-    .app-layout{
-        flex-direction: column;
+    .sidebar-nav{
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .nav-section{
+        display: none;
+    }
+
+    .sidebar-footer{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
     }
 
     .main{
         margin-left: 0;
-        width: 100%;
-        padding: 18px;
+        padding: 16px;
     }
 
-    .topbar{
-        flex-direction: column;
-        align-items: flex-start;
+    .dre-wrap{
+        max-height: none;
     }
 
-    .form-grid{
-        grid-template-columns: 1fr;
+    table.dre th:first-child,
+    table.dre td:first-child{
+        min-width: 200px;
+        max-width: 200px;
     }
 }
 
@@ -635,20 +1543,59 @@ body.auth-body{
         grid-template-columns: 1fr;
     }
 
-    .login-container{
-        margin: 16px;
-        padding: 24px;
+    .form-grid{
+        grid-template-columns: 1fr;
     }
 
-    .topbar h1{
-        font-size: 24px;
-    }
-
-    .metric-card h3{
-        font-size: 25px;
-    }
-
-    .search-bar .input{
+    .search-field{
         min-width: 100%;
+    }
+
+    .topbar-actions{
+        width: 100%;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   22. Impressão — sai limpo no papel/PDF
+   -------------------------------------------------------------------------- */
+
+@media print{
+    .sidebar,
+    .topbar-actions,
+    .filter-bar,
+    .flash-messages{
+        display: none !important;
+    }
+
+    body{
+        background: #fff;
+    }
+
+    .main{
+        margin-left: 0;
+        padding: 0;
+    }
+
+    .card{
+        border: none;
+        box-shadow: none;
+    }
+
+    .dre-wrap{
+        max-height: none;
+        overflow: visible;
+    }
+
+    table.dre{
+        min-width: 0;
+        font-size: 9px;
+    }
+
+    table.dre tr.resultado td{
+        background: #e2e8f0 !important;
+        color: #0f172a !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
 }

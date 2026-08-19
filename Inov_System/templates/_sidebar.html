@@ -1,3 +1,4 @@
+{% from '_icons.html' import icon %}
 <aside class="sidebar">
     <div class="sidebar-brand">
         <div class="logo">I</div>
@@ -8,21 +9,46 @@
     </div>
 
     <nav class="sidebar-nav">
-        <a href="/dashboard" class="nav-link {{ 'active' if ativo == 'dashboard' else '' }}">📊 Dashboard</a>
-        <a href="/obras" class="nav-link {{ 'active' if ativo == 'obras' else '' }}">🏗️ Obras (Centros de Custo)</a>
-        <a href="/totais" class="nav-link {{ 'active' if ativo == 'totais' else '' }}">📈 Totais Consolidado</a>
-        <a href="/empresas" class="nav-link {{ 'active' if ativo == 'empresas' else '' }}">🏭 Empresas</a>
-        <a href="/lancamentos" class="nav-link {{ 'active' if ativo == 'lancamentos' else '' }}">✏️ Lançar Dados</a>
-        <a href="/importar-dados" class="nav-link {{ 'active' if ativo == 'importar' else '' }}">📁 Importar Planilha</a>
-        <a href="/categorias" class="nav-link {{ 'active' if ativo == 'categorias' else '' }}">📋 Plano de Contas</a>
-        <a href="/taxas" class="nav-link {{ 'active' if ativo == 'taxas' else '' }}">💰 Taxas e Impostos</a>
+        <a href="{{ url_for('dashboard') }}" class="nav-link {{ 'active' if ativo == 'dashboard' }}">
+            {{ icon('dashboard') }} Dashboard
+        </a>
+
+        <div class="nav-section">Resultado</div>
+        <a href="{{ url_for('obras') }}" class="nav-link {{ 'active' if ativo == 'obras' }}">
+            {{ icon('obras') }} Obras
+        </a>
+        <a href="{{ url_for('totais') }}" class="nav-link {{ 'active' if ativo == 'totais' }}">
+            {{ icon('totais') }} Totais Consolidado
+        </a>
+
+        <div class="nav-section">Dados</div>
+        <a href="{{ url_for('lancamentos_manual') }}" class="nav-link {{ 'active' if ativo == 'lancamentos' }}">
+            {{ icon('lancamentos') }} Lançar Dados
+        </a>
+        <a href="{{ url_for('importar_dados') }}" class="nav-link {{ 'active' if ativo == 'importar' }}">
+            {{ icon('importar') }} Importar Planilha
+        </a>
+
+        <div class="nav-section">Configuração</div>
+        <a href="{{ url_for('empresas') }}" class="nav-link {{ 'active' if ativo == 'empresas' }}">
+            {{ icon('empresas') }} Empresas
+        </a>
+        <a href="{{ url_for('categorias') }}" class="nav-link {{ 'active' if ativo == 'categorias' }}">
+            {{ icon('categorias') }} Plano de Contas
+        </a>
+        <a href="{{ url_for('taxas') }}" class="nav-link {{ 'active' if ativo == 'taxas' }}">
+            {{ icon('taxas') }} Taxas e Impostos
+        </a>
     </nav>
 
     <div class="sidebar-footer">
         <div class="user-box">
-            <strong>{{ session["usuario_nome"] }}</strong>
-            <span>Usuário logado</span>
+            <div class="user-avatar">{{ (session['usuario_nome'] or '?')[0]|upper }}</div>
+            <div class="grow">
+                <strong>{{ session['usuario_nome'] }}</strong>
+                <span>Administrador</span>
+            </div>
         </div>
-        <a class="logout-link" href="/logout">Sair do sistema</a>
+        <a class="logout-link" href="{{ url_for('logout') }}">{{ icon('sair') }} Sair do sistema</a>
     </div>
 </aside>
