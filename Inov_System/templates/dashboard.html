@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+{% set ativo = 'dashboard' %}
+<div class="app-layout">
+    {% include '_sidebar.html' %}
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Visão Geral</h1>
+                <p>Resultado consolidado de todas as obras em {{ ano_atual }}</p>
+            </div>
+            <div class="topbar-actions">
+                <a href="/obras" class="btn btn-light">Ver obras</a>
+                <a href="/totais" class="btn btn-primary">Ver DRE consolidado</a>
+            </div>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="cards-grid">
+            <div class="card metric-card">
+                <small>Receita Bruta</small>
+                <h3>R$ {{ "%.2f"|format(receita_bruta) }}</h3>
+                <span>Acumulado no ano</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Custos</small>
+                <h3>R$ {{ "%.2f"|format(custos) }}</h3>
+                <span>Acumulado no ano</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Lucro Bruto</small>
+                <h3>R$ {{ "%.2f"|format(lucro_bruto) }}</h3>
+                <span>Receita menos custos</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Resultado Líquido</small>
+                <h3>R$ {{ "%.2f"|format(resultado_liquido) }}</h3>
+                <span>Após impostos, IRPJ/CSLL, adm. e financeiras</span>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2>Evolução Mensal</h2>
+                        <p>Lucro líquido consolidado por mês</p>
+                    </div>
+                </div>
+
+                <div class="chart-area">
+                    <canvas id="graficoFinanceiro"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2>Obras</h2>
+                        <p>Acesso rápido ao DRE de cada obra</p>
+                    </div>
+                </div>
+
+                <div class="quick-list">
+                    {% if obras %}
+                        {% for obra in obras %}
+                            <a href="/obras/{{ obra['id'] }}" class="quick-item">
+                                <div class="quick-item-info">
+                                    <h4>{{ obra["nome"] }}</h4>
+                                    <span>{{ obra["empresa_nome"] }} · Código {{ obra["codigo"] }}</span>
+                                </div>
+                                <span class="badge {{ 'warning' if obra['status'] == 'encerrada' else 'primary' }}">
+                                    {{ 'Encerrada' if obra['status'] == 'encerrada' else 'Em andamento' }}
+                                </span>
+                            </a>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state">
+                            Nenhuma obra cadastrada ainda. <a href="/obras">Cadastrar a primeira obra</a>.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    const labels = JSON.parse('{{ labels|tojson|safe }}');
+    const valores = JSON.parse('{{ valores|tojson|safe }}');
+
+    const canvas = document.getElementById('graficoFinanceiro');
+
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Lucro Líquido',
+                    data: valores,
+                    backgroundColor: 'rgba(29, 78, 216, 0.75)',
+                    borderRadius: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    }
+</script>
+
+</body>
+</html>

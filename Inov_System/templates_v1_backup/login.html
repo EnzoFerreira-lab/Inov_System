@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth-body">
+
+    <div class="login-container">
+        <div class="login-brand">
+            <div class="logo">I</div>
+            <h1>INOV</h1>
+            <p>Sistema contábil e financeiro</p>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <form method="POST">
+            <div class="form-group">
+                <label for="email">E-mail</label>
+                <input class="input" type="email" name="email" id="email" placeholder="Digite seu e-mail" required>
+            </div>
+
+            <div class="form-group">
+                <label for="senha">Senha</label>
+                <input class="input" type="password" name="senha" id="senha" placeholder="Digite sua senha" required>
+            </div>
+
+            <button class="btn btn-primary" type="submit" style="width: 100%;">Entrar no sistema</button>
+        </form>
+    </div>
+
+</body>
+</html>

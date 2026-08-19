@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Empresas - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+</head>
+<body>
+
+<div class="app-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="logo">I</div>
+            <div class="sidebar-brand-text">
+                <h2>INOV</h2>
+                <span>Painel Contábil</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="/dashboard" class="nav-link">📊 Dashboard</a>
+            <a href="/centros-custo" class="nav-link">🏢 Centros de Custo</a>
+            <a href="/empresas" class="nav-link active">🏭 Empresas</a>
+            <a href="/importar-dados" class="nav-link">📁 Importar Dados</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-box">
+                <strong>{{ session["usuario_nome"] }}</strong>
+                <span>Usuário logado</span>
+            </div>
+            <a class="logout-link" href="/logout">Sair do sistema</a>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Empresas</h1>
+                <p>Gerencie empresas vinculadas ao sistema</p>
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-primary" onclick="openModal('modalEmpresa')">Nova Empresa</button>
+            </div>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="card table-card">
+            <div class="card-header">
+                <div>
+                    <h2>Empresas cadastradas</h2>
+                    <p>Visualize dados e centro de custo vinculado</p>
+                </div>
+            </div>
+
+            {% if empresas %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>CNPJ</th>
+                        <th>Centro de custo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for empresa in empresas %}
+                    <tr>
+                        <td>{{ empresa["nome"] }}</td>
+                        <td>{{ empresa["cnpj"] }}</td>
+                        <td>
+                            {% if empresa["centro_nome"] %}
+                                <span class="badge primary">{{ empresa["centro_nome"] }}</span>
+                            {% else %}
+                                <span class="badge warning">Não vinculado</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+                <div class="empty-state">Nenhuma empresa cadastrada ainda.</div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<div class="modal" id="modalEmpresa">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Nova Empresa</h3>
+            <button class="close-btn" onclick="closeModal('modalEmpresa')">✕</button>
+        </div>
+
+        <form method="POST">
+            <div class="form-grid">
+                <div class="full">
+                    <div class="form-group">
+                        <label>Nome da empresa</label>
+                        <input class="input" type="text" name="nome" placeholder="Ex: INOV Contabilidade" required>
+                    </div>
+                </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label>CNPJ</label>
+                        <input class="input" type="text" id="cnpj" name="cnpj" placeholder="00.000.000/0000-00" required>
+                    </div>
+                </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label>Centro de custo</label>
+                        <select class="select" name="centro_custo_id">
+                            <option value="">Sem vínculo</option>
+                            {% for centro in centros %}
+                                <option value="{{ centro['id'] }}">{{ centro['nome'] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" type="submit">Salvar empresa</button>
+        </form>
+    </div>
+</div>
+
+</body>
+</html>

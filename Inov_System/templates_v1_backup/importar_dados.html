@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importar Dados - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="app-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="logo">I</div>
+            <div class="sidebar-brand-text">
+                <h2>INOV</h2>
+                <span>Painel Contábil</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="/dashboard" class="nav-link">📊 Dashboard</a>
+            <a href="/centros-custo" class="nav-link">🏢 Centros de Custo</a>
+            <a href="/empresas" class="nav-link">🏭 Empresas</a>
+            <a href="/importar-dados" class="nav-link active">📁 Importar Dados</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-box">
+                <strong>{{ session["usuario_nome"] }}</strong>
+                <span>Usuário logado</span>
+            </div>
+            <a class="logout-link" href="/logout">Sair do sistema</a>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Importar Dados</h1>
+                <p>Envie uma planilha Excel para cadastrar lançamentos em massa</p>
+            </div>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="section-title">
+                <h2>Modelo da planilha</h2>
+                <p>Use exatamente estas colunas no Excel</p>
+            </div>
+
+            <div class="card table-card" style="box-shadow: none; border: 1px solid var(--border);">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>empresa</th>
+                            <th>cnpj</th>
+                            <th>centro_custo</th>
+                            <th>codigo_centro</th>
+                            <th>mes</th>
+                            <th>ano</th>
+                            <th>tipo_conta</th>
+                            <th>conta_nome</th>
+                            <th>descricao</th>
+                            <th>valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>INOV Contabilidade</td>
+                            <td>12.345.678/0001-90</td>
+                            <td>Administrativo</td>
+                            <td>ADM001</td>
+                            <td>3</td>
+                            <td>2026</td>
+                            <td>Receita</td>
+                            <td>Honorários</td>
+                            <td>Receita mensal</td>
+                            <td>2500.00</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <form method="POST" enctype="multipart/form-data">
+                <div class="upload-box">
+                    <h3>Importação em massa</h3>
+                    <p>Selecione uma planilha Excel no modelo padrão do sistema</p>
+
+                    <div class="form-group" style="max-width: 500px; margin: 0 auto 18px;">
+                        <input class="input" type="file" name="arquivo" accept=".xlsx,.xls" required>
+                    </div>
+
+                    <button class="btn btn-primary" type="submit">Importar planilha</button>
+
+                    <div class="helper-text">
+                        Arquivos permitidos: .xlsx e .xls
+                    </div>
+                </div>
+            </form>
+        </div>
+    </main>
+</div>
+
+</body>
+</html>

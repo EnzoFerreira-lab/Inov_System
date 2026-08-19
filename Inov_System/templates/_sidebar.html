@@ -1,0 +1,28 @@
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="logo">I</div>
+        <div class="sidebar-brand-text">
+            <h2>INOV</h2>
+            <span>Painel Contábil</span>
+        </div>
+    </div>
+
+    <nav class="sidebar-nav">
+        <a href="/dashboard" class="nav-link {{ 'active' if ativo == 'dashboard' else '' }}">📊 Dashboard</a>
+        <a href="/obras" class="nav-link {{ 'active' if ativo == 'obras' else '' }}">🏗️ Obras (Centros de Custo)</a>
+        <a href="/totais" class="nav-link {{ 'active' if ativo == 'totais' else '' }}">📈 Totais Consolidado</a>
+        <a href="/empresas" class="nav-link {{ 'active' if ativo == 'empresas' else '' }}">🏭 Empresas</a>
+        <a href="/lancamentos" class="nav-link {{ 'active' if ativo == 'lancamentos' else '' }}">✏️ Lançar Dados</a>
+        <a href="/importar-dados" class="nav-link {{ 'active' if ativo == 'importar' else '' }}">📁 Importar Planilha</a>
+        <a href="/categorias" class="nav-link {{ 'active' if ativo == 'categorias' else '' }}">📋 Plano de Contas</a>
+        <a href="/taxas" class="nav-link {{ 'active' if ativo == 'taxas' else '' }}">💰 Taxas e Impostos</a>
+    </nav>
+
+    <div class="sidebar-footer">
+        <div class="user-box">
+            <strong>{{ session["usuario_nome"] }}</strong>
+            <span>Usuário logado</span>
+        </div>
+        <a class="logout-link" href="/logout">Sair do sistema</a>
+    </div>
+</aside>

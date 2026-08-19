@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<div class="app-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="logo">I</div>
+            <div class="sidebar-brand-text">
+                <h2>INOV</h2>
+                <span>Painel Contábil</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="/dashboard" class="nav-link active">📊 Dashboard</a>
+            <a href="/centros-custo" class="nav-link">🏢 Centros de Custo</a>
+            <a href="/empresas" class="nav-link">🏭 Empresas</a>
+            <a href="/importar-dados" class="nav-link">📁 Importar Dados</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-box">
+                <strong>{{ session["usuario_nome"] }}</strong>
+                <span>Usuário logado</span>
+            </div>
+            <a class="logout-link" href="/logout">Sair do sistema</a>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Visão Geral</h1>
+                <p>Acompanhe os principais resultados financeiros do sistema</p>
+            </div>
+            <div class="topbar-actions">
+                <a href="/centros-custo" class="btn btn-light">Ver centros</a>
+                <a href="/empresas" class="btn btn-primary">Gerenciar empresas</a>
+            </div>
+        </div>
+
+        <div class="cards-grid">
+            <div class="card metric-card">
+                <small>Receita Bruta</small>
+                <h3>R$ {{ "%.2f"|format(receita_bruta) }}</h3>
+                <span>Total de receitas registradas</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Custos</small>
+                <h3>R$ {{ "%.2f"|format(custos) }}</h3>
+                <span>Total de custos lançados</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Lucro Bruto</small>
+                <h3>R$ {{ "%.2f"|format(lucro_bruto) }}</h3>
+                <span>Receita menos custos</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Resultado Líquido</small>
+                <h3>R$ {{ "%.2f"|format(resultado_liquido) }}</h3>
+                <span>Resultado após despesas</span>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2>Evolução Mensal</h2>
+                        <p>Resultado consolidado por mês</p>
+                    </div>
+                </div>
+
+                <div class="chart-area">
+                    <canvas id="graficoFinanceiro"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2>Centros de Custo</h2>
+                        <p>Acesso rápido</p>
+                    </div>
+                </div>
+
+                <div class="quick-list">
+                    {% if centros %}
+                        {% for centro in centros %}
+                            <a href="/centro/{{ centro['id'] }}" class="quick-item">
+                                <div class="quick-item-info">
+                                    <h4>{{ centro["nome"] }}</h4>
+                                    <span>Código: {{ centro["codigo"] }}</span>
+                                </div>
+                                <span class="badge primary">Abrir</span>
+                            </a>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state">
+                            Nenhum centro de custo cadastrado.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    const labels = JSON.parse('{{ labels|tojson|safe }}');
+    const valores = JSON.parse('{{ valores|tojson|safe }}');
+
+    const canvas = document.getElementById('graficoFinanceiro');
+
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Resultado Mensal',
+                    data: valores,
+                    backgroundColor: 'rgba(29, 78, 216, 0.75)',
+                    borderRadius: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importar Dados - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+</head>
+<body>
+{% set ativo = 'importar' %}
+<div class="app-layout">
+    {% include '_sidebar.html' %}
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Importar Planilha</h1>
+                <p>Atualize vários lançamentos de uma vez, para várias obras ao mesmo tempo</p>
+            </div>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="section-title">
+                <h2>Opção 1 — Enviar o arquivo de DRE da contabilidade (recomendado)</h2>
+                <p>Pode subir o mesmo arquivo Excel de sempre, com uma aba por obra
+                   (ex: "OBRA 251", "OBRA 265", "DEMAIS OBRAS"...). O sistema identifica
+                   sozinho cada obra, cada categoria e os valores de cada mês — não precisa
+                   reformatar nada.</p>
+            </div>
+
+            <p class="helper-text">
+                Obras que ainda não existem no sistema são cadastradas automaticamente.
+                Categorias que já existem no plano de contas são reconhecidas mesmo com
+                pequenas diferenças de acento/maiúscula; categorias realmente novas são
+                criadas automaticamente. Importar o mesmo mês de novo atualiza os valores
+                (não duplica). As abas "TOTAIS" e "DEPTO TÉCNICO" ainda não são lidas
+                automaticamente — isso está no plano de próximos passos.
+            </p>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="section-title">
+                <h2>Opção 2 — Planilha simples (linha a linha)</h2>
+                <p>Alternativa para quando não for o arquivo de DRE completo — uma planilha
+                   simples com estas colunas:</p>
+            </div>
+
+            <div class="card table-card" style="box-shadow: none; border: 1px solid var(--border);">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>codigo_obra</th>
+                            <th>categoria</th>
+                            <th>mes</th>
+                            <th>ano</th>
+                            <th>valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>251</td>
+                            <td>Salarios e Ordenados</td>
+                            <td>6</td>
+                            <td>2026</td>
+                            <td>24143.11</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <form method="POST" enctype="multipart/form-data">
+                <div class="upload-box">
+                    <h3>Enviar planilha</h3>
+                    <p>Selecione o arquivo Excel (formato 1 ou 2 — o sistema identifica sozinho)</p>
+
+                    <div class="form-group" style="max-width: 500px; margin: 0 auto 18px;">
+                        <input class="input" type="file" name="arquivo" accept=".xlsx,.xls" required>
+                    </div>
+
+                    <button class="btn btn-primary" type="submit">Importar planilha</button>
+
+                    <div class="helper-text">
+                        Arquivos permitidos: .xlsx e .xls
+                    </div>
+                </div>
+            </form>
+        </div>
+    </main>
+</div>
+
+</body>
+</html>

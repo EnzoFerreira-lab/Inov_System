@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centros de Custo - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+</head>
+<body>
+
+<div class="app-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="logo">I</div>
+            <div class="sidebar-brand-text">
+                <h2>INOV</h2>
+                <span>Painel Contábil</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="/dashboard" class="nav-link">📊 Dashboard</a>
+            <a href="/centros-custo" class="nav-link active">🏢 Centros de Custo</a>
+            <a href="/empresas" class="nav-link">🏭 Empresas</a>
+            <a href="/importar-dados" class="nav-link">📁 Importar Dados</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-box">
+                <strong>{{ session["usuario_nome"] }}</strong>
+                <span>Usuário logado</span>
+            </div>
+            <a class="logout-link" href="/logout">Sair do sistema</a>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Centros de Custo</h1>
+                <p>Gerencie os centros de custo vinculados ao sistema</p>
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-primary" onclick="openModal('modalCentro')">Novo Centro</button>
+            </div>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="card table-card">
+            <div class="card-header">
+                <div>
+                    <h2>Lista de Centros</h2>
+                    <p>Visualize e acesse os detalhes de cada centro</p>
+                </div>
+            </div>
+
+            {% if centros %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Código</th>
+                        <th>Empresas vinculadas</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for centro in centros %}
+                    <tr>
+                        <td>{{ centro["nome"] }}</td>
+                        <td>{{ centro["codigo"] }}</td>
+                        <td>{{ centro["total_empresas"] }}</td>
+                        <td>
+                            <a href="/centro/{{ centro['id'] }}" class="btn btn-light">Ver detalhes</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+                <div class="empty-state">Nenhum centro cadastrado ainda.</div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<div class="modal" id="modalCentro">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Novo Centro de Custo</h3>
+            <button class="close-btn" onclick="closeModal('modalCentro')">✕</button>
+        </div>
+
+        <form method="POST">
+            <div class="form-grid">
+                <div class="full">
+                    <div class="form-group">
+                        <label>Nome do centro</label>
+                        <input class="input" type="text" name="nome" placeholder="Ex: Administrativo" required>
+                    </div>
+                </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label>Código de identificação</label>
+                        <input class="input" type="text" name="codigo" placeholder="Ex: ADM001" required>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" type="submit">Salvar centro de custo</button>
+        </form>
+    </div>
+</div>
+
+</body>
+</html>

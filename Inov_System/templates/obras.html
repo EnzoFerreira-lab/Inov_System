@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obras - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+</head>
+<body>
+{% set ativo = 'obras' %}
+<div class="app-layout">
+    {% include '_sidebar.html' %}
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Obras (Centros de Custo)</h1>
+                <p>Cada obra é um centro de custo com seu próprio DRE, igual à planilha</p>
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-primary" onclick="openModal('modalObra')">Nova Obra</button>
+            </div>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="card table-card">
+            <div class="card-header">
+                <div>
+                    <h2>Obras cadastradas</h2>
+                    <p>{{ obras|length }} obra(s)</p>
+                </div>
+            </div>
+
+            {% if obras %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Obra</th>
+                        <th>Empresa</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for obra in obras %}
+                    <tr>
+                        <td>{{ obra["codigo"] }}</td>
+                        <td>{{ obra["nome"] }}</td>
+                        <td>{{ obra["empresa_nome"] }}</td>
+                        <td>
+                            <span class="badge {{ 'warning' if obra['status'] == 'encerrada' else 'primary' }}">
+                                {{ 'Encerrada' if obra['status'] == 'encerrada' else 'Em andamento' }}
+                            </span>
+                        </td>
+                        <td>
+                            <a class="btn btn-light" href="/obras/{{ obra['id'] }}">Ver DRE</a>
+                            <a class="btn btn-light" href="/obras/{{ obra['id'] }}/editar">Editar</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+                <div class="empty-state">Nenhuma obra cadastrada ainda.</div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<div class="modal" id="modalObra">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Nova Obra</h3>
+            <button class="close-btn" onclick="closeModal('modalObra')">✕</button>
+        </div>
+
+        <form method="POST">
+            <div class="form-grid">
+                <div class="full">
+                    <div class="form-group">
+                        <label>Empresa</label>
+                        <select class="select" name="empresa_id" required>
+                            <option value="">Selecione a empresa</option>
+                            {% for empresa in empresas %}
+                                <option value="{{ empresa['id'] }}">{{ empresa['nome'] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Código da obra</label>
+                    <input class="input" type="text" name="codigo" placeholder="Ex: 251" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Status</label>
+                    <select class="select" name="status">
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="encerrada">Encerrada</option>
+                    </select>
+                </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label>Nome da obra</label>
+                        <input class="input" type="text" name="nome" placeholder="Ex: OBRA 251 - ESTHER TOWERS - EZTEC" required>
+                    </div>
+                </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label>Data de início</label>
+                        <input class="input" type="date" name="data_inicio">
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" type="submit">Salvar obra</button>
+        </form>
+    </div>
+</div>
+
+{% if not empresas %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        alert('Cadastre uma empresa antes de criar uma obra.');
+    });
+</script>
+{% endif %}
+
+</body>
+</html>

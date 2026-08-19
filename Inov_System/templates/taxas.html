@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taxas e Impostos - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+</head>
+<body>
+{% set ativo = 'taxas' %}
+<div class="app-layout">
+    {% include '_sidebar.html' %}
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>Taxas e Impostos</h1>
+                <p>Percentuais usados no cálculo do DRE. Cadastrar uma nova taxa cria uma nova vigência — o histórico não muda.</p>
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-primary" onclick="openModal('modalTaxa')">Nova Vigência</button>
+            </div>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="card table-card">
+            <div class="card-header">
+                <div>
+                    <h2>Histórico de taxas</h2>
+                    <p>A taxa sem "vigência fim" é a que está valendo hoje</p>
+                </div>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Taxa</th>
+                        <th>Percentual</th>
+                        <th>Base de cálculo</th>
+                        <th>Vigência início</th>
+                        <th>Vigência fim</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in taxas %}
+                    <tr>
+                        <td>{{ t["descricao"] }}</td>
+                        <td>{{ "%.2f"|format(t["percentual"]) }}%</td>
+                        <td>{{ 'Receita' if t['base_calculo'] == 'receita' else 'Custo' }}</td>
+                        <td>{{ t["vigencia_inicio"] }}</td>
+                        <td>
+                            {% if t["vigencia_fim"] %}
+                                {{ t["vigencia_fim"] }}
+                            {% else %}
+                                <span class="badge success">Vigente</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </main>
+</div>
+
+<div class="modal" id="modalTaxa">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Nova Vigência de Taxa</h3>
+            <button class="close-btn" onclick="closeModal('modalTaxa')">✕</button>
+        </div>
+
+        <form method="POST">
+            <div class="form-grid">
+                <div class="full">
+                    <div class="form-group">
+                        <label>Taxa</label>
+                        <select class="select" name="chave" required>
+                            <option value="impostos_servicos">Impostos sobre Serviços</option>
+                            <option value="irpj_csll">IRPJ e CSLL</option>
+                            <option value="despesa_administrativa">Despesas Administrativas/Técnico</option>
+                            <option value="despesa_financeira">Despesas Financeiras</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Novo percentual (%)</label>
+                    <input class="input" type="text" name="percentual" placeholder="Ex: 13.15" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Vigente a partir de</label>
+                    <input class="input" type="month" name="vigencia_inicio" required>
+                </div>
+            </div>
+
+            <p class="helper-text">
+                A vigência atual dessa taxa será automaticamente encerrada no mês anterior ao informado.
+            </p>
+
+            <button class="btn btn-primary" type="submit">Salvar nova vigência</button>
+        </form>
+    </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalhes do Centro - INOV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+</head>
+<body>
+
+<div class="app-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="logo">I</div>
+            <div class="sidebar-brand-text">
+                <h2>INOV</h2>
+                <span>Painel Contábil</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="/dashboard" class="nav-link">📊 Dashboard</a>
+            <a href="/centros-custo" class="nav-link active">🏢 Centros de Custo</a>
+            <a href="/empresas" class="nav-link">🏭 Empresas</a>
+            <a href="/importar-dados" class="nav-link">📁 Importar Dados</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-box">
+                <strong>{{ session["usuario_nome"] }}</strong>
+                <span>Usuário logado</span>
+            </div>
+            <a class="logout-link" href="/logout">Sair do sistema</a>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>{{ centro["nome"] }}</h1>
+                <p>Código: {{ centro["codigo"] }}</p>
+            </div>
+            <div class="topbar-actions">
+                <a href="/centro/{{ centro['id'] }}/exportar" class="btn btn-light">Exportar Excel</a>
+                <button class="btn btn-primary" onclick="openModal('modalLancamento')">Novo Lançamento</button>
+            </div>
+        </div>
+
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for categoria, mensagem in messages %}
+                        <div class="flash {{ categoria }}">{{ mensagem }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <div class="cards-grid">
+            <div class="card metric-card">
+                <small>Receita Bruta</small>
+                <h3>R$ {{ "%.2f"|format(receita_bruta) }}</h3>
+                <span>Total de receitas deste centro</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Custos</small>
+                <h3>R$ {{ "%.2f"|format(custos) }}</h3>
+                <span>Total de custos deste centro</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Lucro Bruto</small>
+                <h3>R$ {{ "%.2f"|format(lucro_bruto) }}</h3>
+                <span>Receita menos custos</span>
+            </div>
+
+            <div class="card metric-card">
+                <small>Resultado Líquido</small>
+                <h3>R$ {{ "%.2f"|format(resultado_liquido) }}</h3>
+                <span>Resultado final do centro</span>
+            </div>
+        </div>
+
+        <div class="card table-card">
+            <div class="card-header">
+                <div>
+                    <h2>Lançamentos</h2>
+                    <p>Detalhamento financeiro do centro de custo</p>
+                </div>
+            </div>
+
+            {% if lancamentos %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Mês/Ano</th>
+                        <th>Empresa</th>
+                        <th>Tipo</th>
+                        <th>Conta</th>
+                        <th>Descrição</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lancamento in lancamentos %}
+                    <tr>
+                        <td>{{ "%02d"|format(lancamento["mes"]) }}/{{ lancamento["ano"] }}</td>
+                        <td>{{ lancamento["empresa_nome"] }}</td>
+                        <td>
+                            {% if lancamento["tipo_conta"] == "Receita" %}
+                                <span class="badge success">{{ lancamento["tipo_conta"] }}</span>
+                            {% elif lancamento["tipo_conta"] == "Custo" %}
+                                <span class="badge warning">{{ lancamento["tipo_conta"] }}</span>
+                            {% else %}
+                                <span class="badge danger">{{ lancamento["tipo_conta"] }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ lancamento["conta_nome"] }}</td>
+                        <td>{{ lancamento["descricao"] }}</td>
+                        <td>R$ {{ "%.2f"|format(lancamento["valor"]) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+                <div class="empty-state">Nenhum lançamento cadastrado para este centro.</div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+
+<div class="modal" id="modalLancamento">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Novo Lançamento</h3>
+            <button class="close-btn" onclick="closeModal('modalLancamento')">✕</button>
+        </div>
+
+        <form method="POST">
+            <div class="form-grid">
+                <div class="full">
+                    <div class="form-group">
+                        <label>Empresa</label>
+                        <select class="select" name="empresa_id" required>
+                            <option value="">Selecione a empresa</option>
+                            {% for empresa in empresas %}
+                                <option value="{{ empresa['id'] }}">{{ empresa['nome'] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Mês</label>
+                    <input class="input" type="number" name="mes" min="1" max="12" placeholder="Ex: 3" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Ano</label>
+                    <input class="input" type="number" name="ano" placeholder="Ex: 2026" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Tipo de conta</label>
+                    <select class="select" name="tipo_conta" required>
+                        <option value="">Selecione</option>
+                        <option value="Receita">Receita</option>
+                        <option value="Custo">Custo</option>
+                        <option value="Despesa">Despesa</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Conta nome</label>
+                    <input class="input" type="text" name="conta_nome" placeholder="Ex: Vendas de serviço" required>
+                </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label>Descrição detalhada</label>
+                        <textarea class="textarea" name="descricao" placeholder="Descreva o lançamento"></textarea>
+                    </div>
+                </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label>Valor</label>
+                        <input class="input money-input" type="number" step="0.01" name="valor" placeholder="0.00" required>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" type="submit">Salvar lançamento</button>
+        </form>
+    </div>
+</div>
+
+</body>
+</html>
