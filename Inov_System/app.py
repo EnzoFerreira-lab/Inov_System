@@ -1,7 +1,13 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file
+from flask import (
+    Flask, render_template, request, redirect, url_for, session, flash,
+    send_file, abort,
+)
 import os
 import re
-import calendar
+import secrets
+import logging
+import sqlite3
+import datetime
 import pandas as pd
 import openpyxl
 from werkzeug.utils import secure_filename
@@ -14,11 +20,22 @@ from dre import (
     buscar_saldos_anteriores,
     CAMPOS_TOTAIS,
 )
-from dre_import import importar_planilha_dre_real
+from dre_import import importar_planilha_dre_real, RegistroImportacao, desfazer_importacao
 from dre_export import gerar_excel_dre_obra, gerar_excel_dre_consolidado
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("INOV_SECRET_KEY", "chave_secreta_inov_dev")
+
+# A chave assina o cookie de sessão. Um valor fixo no código permitiria a
+# qualquer um forjar uma sessão de administrador, então em produção ela vem do
+# ambiente. Sem a variável, sorteia uma chave nova a cada inicialização: é
+# seguro, com o efeito colateral aceitável de derrubar as sessões no restart.
+app.secret_key = os.environ.get("INOV_SECRET_KEY")
+if not app.secret_key:
+    app.secret_key = secrets.token_hex(32)
+    logging.getLogger(__name__).warning(
+        "INOV_SECRET_KEY não definida — usando chave temporária. "
+        "Defina a variável de ambiente em produção para manter as sessões entre reinícios."
+    )
 
 UPLOAD_FOLDER = "uploads"
 EXPORT_FOLDER = "exports"
@@ -116,12 +133,106 @@ app.jinja_env.globals.update(
 )
 
 
+# ---------------------------------------------------------------------------
+# Proteção CSRF
+#
+# Sem isso, uma página em outro site conseguiria disparar um POST no sistema
+# usando a sessão de quem estivesse logado — e há POSTs destrutivos aqui
+# (excluir obra apaga todos os lançamentos dela). Cada formulário carrega um
+# token ligado à sessão, e todo método que altera dado é obrigado a apresentá-lo.
+# ---------------------------------------------------------------------------
+
+METODOS_QUE_ALTERAM = ("POST", "PUT", "PATCH", "DELETE")
+
+
+def token_csrf():
+    if "_csrf" not in session:
+        session["_csrf"] = secrets.token_urlsafe(32)
+    return session["_csrf"]
+
+
+@app.before_request
+def validar_csrf():
+    if request.method not in METODOS_QUE_ALTERAM:
+        return
+
+    esperado = session.get("_csrf")
+    enviado = request.form.get("_csrf") or request.headers.get("X-CSRF-Token", "")
+
+    if not esperado or not secrets.compare_digest(str(enviado), str(esperado)):
+        abort(400, "Sessão expirada ou requisição inválida. Recarregue a página e tente de novo.")
+
+
+@app.context_processor
+def injetar_csrf():
+    from markupsafe import Markup
+
+    def campo_csrf():
+        """Insere o campo oculto do token. Todo <form method="POST"> precisa dele."""
+        return Markup(f'<input type="hidden" name="_csrf" value="{token_csrf()}">')
+
+    return {"campo_csrf": campo_csrf}
+
+
+# ---------------------------------------------------------------------------
+# Consultas auxiliares compartilhadas por várias telas
+# ---------------------------------------------------------------------------
+
+def anos_com_dados(cur, ano_atual):
+    """
+    Anos que realmente têm movimento, para o seletor não oferecer uma janela
+    fixa (que mostrava anos vazios e escondia anos com dado fora dela).
+
+    O 'valor <> 0' importa: a planilha traz colunas de meses futuros ainda em
+    branco, e o importador cria a linha zerada. Sem o filtro, o seletor
+    ofereceria anos que abrem um DRE inteiramente vazio.
+    """
+    cur.execute("SELECT DISTINCT ano FROM lancamentos WHERE valor <> 0 ORDER BY ano")
+    anos = {r["ano"] for r in cur.fetchall()}
+    anos.add(ano_atual)
+    anos.add(datetime.date.today().year)
+    return sorted(anos)
+
+
+def listar_empresas(cur):
+    cur.execute("SELECT id, nome FROM empresas ORDER BY nome")
+    return [dict(r) for r in cur.fetchall()]
+
+
+def obra_ids_da_empresa(cur, empresa_id=None):
+    """
+    Ids das obras a consolidar. Sem empresa escolhida, todas.
+
+    Existe porque /totais e /dashboard somavam indistintamente as obras de
+    todas as empresas — com um único cliente ninguém notava, mas o segundo
+    cliente tornaria o consolidado errado sem dar nenhum erro.
+    """
+    if empresa_id:
+        cur.execute("SELECT id FROM obras WHERE empresa_id = ?", (empresa_id,))
+    else:
+        cur.execute("SELECT id FROM obras")
+    return [r["id"] for r in cur.fetchall()]
+
+
 def criar_pastas():
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     os.makedirs(EXPORT_FOLDER, exist_ok=True)
-    os.makedirs("static/css", exist_ok=True)
-    os.makedirs("static/js", exist_ok=True)
-    os.makedirs("templates", exist_ok=True)
+
+
+def preparar_ambiente():
+    """
+    Garante pastas e schema na inicialização.
+
+    Roda ao importar o módulo, não só em `python app.py`: servido por WSGI
+    (gunicorn, waitress) o bloco __main__ nunca executa, e o sistema subia
+    sem as tabelas. criar_tabelas() usa CREATE TABLE IF NOT EXISTS e só semeia
+    o que ainda não existe, então repetir é inofensivo.
+    """
+    criar_pastas()
+    criar_tabelas()
+
+
+preparar_ambiente()
 
 
 def usuario_logado():
@@ -161,6 +272,24 @@ def parse_valor_br(texto):
         return abs(float(limpo))
     except ValueError:
         return 0.0
+
+
+def erro_ao_salvar(mensagem_conflito, excecao):
+    """
+    Separa "o usuário tentou duplicar um registro" de "algo quebrou".
+
+    Antes, qualquer falha virava a mesma mensagem sobre duplicidade, o que
+    escondia o erro real e deixava o diagnóstico no chute. Agora só o conflito
+    de unicidade recebe a mensagem amigável; o resto vai para o log do servidor.
+    """
+    if isinstance(excecao, sqlite3.IntegrityError):
+        flash(mensagem_conflito, "erro")
+    else:
+        app.logger.exception("Falha inesperada ao gravar no banco")
+        flash(
+            "Erro inesperado ao salvar. O detalhe técnico foi registrado no log do servidor.",
+            "erro",
+        )
 
 
 def arquivo_permitido(filename):
@@ -213,22 +342,32 @@ def dashboard():
     if redir:
         return redir
 
+    ano_atual = request.args.get("ano", type=int) or datetime.date.today().year
+    empresa_id = request.args.get("empresa_id", type=int)
+
     conn = conectar()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT o.*, e.nome AS empresa_nome
-        FROM obras o
-        JOIN empresas e ON e.id = o.empresa_id
-        ORDER BY o.status = 'encerrada', o.nome
-    """)
+    if empresa_id:
+        cur.execute("""
+            SELECT o.*, e.nome AS empresa_nome
+            FROM obras o
+            JOIN empresas e ON e.id = o.empresa_id
+            WHERE o.empresa_id = ?
+            ORDER BY o.status = 'encerrada', o.nome
+        """, (empresa_id,))
+    else:
+        cur.execute("""
+            SELECT o.*, e.nome AS empresa_nome
+            FROM obras o
+            JOIN empresas e ON e.id = o.empresa_id
+            ORDER BY o.status = 'encerrada', o.nome
+        """)
     obras = [dict(r) for r in cur.fetchall()]
-    conn.close()
 
-    ano_atual = request.args.get("ano", type=int)
-    if not ano_atual:
-        import datetime
-        ano_atual = datetime.date.today().year
+    empresas_lista = listar_empresas(cur)
+    anos = anos_com_dados(cur, ano_atual)
+    conn.close()
 
     obra_ids = [o["id"] for o in obras]
     meses = meses_do_ano(ano_atual)
@@ -277,6 +416,9 @@ def dashboard():
     return render_template(
         "dashboard.html",
         ano_atual=ano_atual,
+        anos=anos,
+        empresas=empresas_lista,
+        empresa_id=empresa_id,
         acumulado=acumulado,
         margem_liquida=margem_liquida,
         margem_bruta=margem_bruta,
@@ -318,8 +460,8 @@ def empresas():
                 cur.execute("INSERT INTO empresas (nome, cnpj) VALUES (?, ?)", (nome, cnpj))
                 conn.commit()
                 flash("Empresa cadastrada com sucesso.", "sucesso")
-            except Exception:
-                flash("Não foi possível cadastrar. Verifique se o CNPJ já existe.", "erro")
+            except Exception as e:
+                erro_ao_salvar("Não foi possível cadastrar. Verifique se o CNPJ já existe.", e)
         else:
             flash("Informe o nome da empresa.", "erro")
 
@@ -356,8 +498,8 @@ def editar_empresa(empresa_id):
                 flash("Empresa atualizada com sucesso.", "sucesso")
                 conn.close()
                 return redirect(url_for("empresas"))
-            except Exception:
-                flash("Não foi possível salvar. Verifique se o CNPJ já existe em outra empresa.", "erro")
+            except Exception as e:
+                erro_ao_salvar("Não foi possível salvar. Verifique se o CNPJ já existe em outra empresa.", e)
         else:
             flash("Informe o nome da empresa.", "erro")
 
@@ -423,8 +565,8 @@ def obras():
                 """, (empresa_id, nome, codigo, status, data_inicio))
                 conn.commit()
                 flash("Obra cadastrada com sucesso.", "sucesso")
-            except Exception:
-                flash("Não foi possível cadastrar. Verifique se o código já existe.", "erro")
+            except Exception as e:
+                erro_ao_salvar("Não foi possível cadastrar. Verifique se o código já existe.", e)
         else:
             flash("Preencha nome, código e empresa.", "erro")
 
@@ -470,8 +612,8 @@ def editar_obra(obra_id):
                 flash("Obra atualizada com sucesso.", "sucesso")
                 conn.close()
                 return redirect(url_for("obras"))
-            except Exception:
-                flash("Não foi possível salvar. Verifique se o código já existe em outra obra.", "erro")
+            except Exception as e:
+                erro_ao_salvar("Não foi possível salvar. Verifique se o código já existe em outra obra.", e)
         else:
             flash("Preencha nome, código e empresa.", "erro")
 
@@ -513,10 +655,7 @@ def obra_dre(obra_id):
     if redir:
         return redir
 
-    ano = request.args.get("ano", type=int)
-    if not ano:
-        import datetime
-        ano = datetime.date.today().year
+    ano = request.args.get("ano", type=int) or datetime.date.today().year
 
     conn = conectar()
     cur = conn.cursor()
@@ -526,6 +665,7 @@ def obra_dre(obra_id):
         WHERE o.id = ?
     """, (obra_id,))
     obra = cur.fetchone()
+    anos = anos_com_dados(cur, ano)
     conn.close()
 
     if not obra:
@@ -540,6 +680,7 @@ def obra_dre(obra_id):
         "obra_dre.html",
         obra=obra,
         ano=ano,
+        anos=anos,
         meses=meses,
         meses_nome=MESES_NOME,
         categorias=resultado["categorias"],
@@ -555,10 +696,7 @@ def exportar_obra_excel(obra_id):
     if redir:
         return redir
 
-    ano = request.args.get("ano", type=int)
-    if not ano:
-        import datetime
-        ano = datetime.date.today().year
+    ano = request.args.get("ano", type=int) or datetime.date.today().year
 
     conn = conectar()
     cur = conn.cursor()
@@ -603,15 +741,14 @@ def totais():
     if redir:
         return redir
 
-    ano = request.args.get("ano", type=int)
-    if not ano:
-        import datetime
-        ano = datetime.date.today().year
+    ano = request.args.get("ano", type=int) or datetime.date.today().year
+    empresa_id = request.args.get("empresa_id", type=int)
 
     conn = conectar()
     cur = conn.cursor()
-    cur.execute("SELECT id FROM obras")
-    obra_ids = [r["id"] for r in cur.fetchall()]
+    obra_ids = obra_ids_da_empresa(cur, empresa_id)
+    empresas_lista = listar_empresas(cur)
+    anos = anos_com_dados(cur, ano)
     conn.close()
 
     meses = meses_do_ano(ano)
@@ -620,6 +757,10 @@ def totais():
     return render_template(
         "totais.html",
         ano=ano,
+        anos=anos,
+        empresas=empresas_lista,
+        empresa_id=empresa_id,
+        total_obras=len(obra_ids),
         meses=meses,
         meses_nome=MESES_NOME,
         totais=resultado["totais"],
@@ -633,15 +774,19 @@ def exportar_totais_excel():
     if redir:
         return redir
 
-    ano = request.args.get("ano", type=int)
-    if not ano:
-        import datetime
-        ano = datetime.date.today().year
+    ano = request.args.get("ano", type=int) or datetime.date.today().year
+    empresa_id = request.args.get("empresa_id", type=int)
 
     conn = conectar()
     cur = conn.cursor()
-    cur.execute("SELECT id FROM obras")
-    obra_ids = [r["id"] for r in cur.fetchall()]
+    obra_ids = obra_ids_da_empresa(cur, empresa_id)
+
+    sufixo = ""
+    if empresa_id:
+        cur.execute("SELECT nome FROM empresas WHERE id = ?", (empresa_id,))
+        empresa = cur.fetchone()
+        if empresa:
+            sufixo = "_" + re.sub(r"[^A-Za-z0-9]+", "_", empresa["nome"]).strip("_")[:30]
     conn.close()
 
     meses = meses_do_ano(ano)
@@ -652,7 +797,7 @@ def exportar_totais_excel():
     return send_file(
         buffer,
         as_attachment=True,
-        download_name=f"DRE_Consolidado_{ano}.xlsx",
+        download_name=f"DRE_Consolidado{sufixo}_{ano}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
@@ -685,8 +830,8 @@ def categorias():
                 """, (codigo, nome, tipo, ordem))
                 conn.commit()
                 flash("Categoria adicionada ao plano de contas.", "sucesso")
-            except Exception:
-                flash("Já existe uma categoria com esse nome.", "erro")
+            except Exception as e:
+                erro_ao_salvar("Já existe uma categoria com esse nome.", e)
         else:
             flash("Informe nome e tipo (receita ou custo).", "erro")
 
@@ -697,7 +842,10 @@ def categorias():
     return render_template("categorias.html", categorias=lista)
 
 
-@app.route("/categorias/<int:categoria_id>/alternar-status")
+# POST, não GET: era a única rota que alterava dado por GET. Um link assim é
+# disparado por pré-carregamento do navegador, antivírus ou indexador — bastava
+# alguém passar o mouse por cima para desativar uma conta do plano.
+@app.route("/categorias/<int:categoria_id>/alternar-status", methods=["POST"])
 def alternar_status_categoria(categoria_id):
     redir = exigir_login()
     if redir:
@@ -706,10 +854,15 @@ def alternar_status_categoria(categoria_id):
     conn = conectar()
     cur = conn.cursor()
     cur.execute("UPDATE categorias_conta SET ativo = 1 - ativo WHERE id = ?", (categoria_id,))
+    cur.execute("SELECT nome, ativo FROM categorias_conta WHERE id = ?", (categoria_id,))
+    categoria = cur.fetchone()
     conn.commit()
     conn.close()
 
-    flash("Status da categoria atualizado.", "sucesso")
+    if categoria:
+        estado = "ativada" if categoria["ativo"] else "desativada"
+        flash(f'Categoria "{categoria["nome"]}" {estado}.', "sucesso")
+
     return redirect(url_for("categorias"))
 
 
@@ -876,8 +1029,11 @@ def importar_dados():
             for nome in nomes_abas
         )
 
+        # Marcado na tela: por padrão a importação preserva o que foi lançado à mão.
+        sobrescrever_manuais = request.form.get("sobrescrever_manuais") == "1"
+
         if eh_arquivo_dre_real:
-            return _importar_arquivo_dre_real(caminho_arquivo)
+            return _importar_arquivo_dre_real(caminho_arquivo, filename, sobrescrever_manuais)
 
         try:
             df = pd.read_excel(caminho_arquivo)
@@ -900,8 +1056,10 @@ def importar_dados():
             categoria_por_codigo = {r["codigo"]: r["id"] for r in todas_categorias if r["codigo"]}
             categoria_por_nome = {r["nome"].strip().lower(): r["id"] for r in todas_categorias}
 
-            import datetime
             agora = datetime.datetime.now().isoformat()
+
+            importacao_id = _criar_registro_importacao(cur, filename, None)
+            registro = RegistroImportacao(cur, importacao_id, sobrescrever_manuais)
 
             total_ok = 0
             total_ignorados = 0
@@ -934,28 +1092,43 @@ def importar_dados():
                     total_ignorados += 1
                     continue
 
-                cur.execute("""
-                    INSERT INTO lancamentos (obra_id, categoria_id, mes, ano, valor, origem, atualizado_em)
-                    VALUES (?, ?, ?, ?, ?, 'importacao', ?)
-                    ON CONFLICT (obra_id, categoria_id, mes, ano)
-                    DO UPDATE SET valor = excluded.valor, origem = 'importacao', atualizado_em = excluded.atualizado_em
-                """, (obra_id, categoria_id, mes, ano, valor, agora))
-                total_ok += 1
+                if registro.gravar_lancamento(obra_id, categoria_id, mes, ano, valor, agora):
+                    total_ok += 1
 
+            _fechar_registro_importacao(cur, importacao_id, registro)
             conn.commit()
+            conflitos = _descrever_conflitos(cur, registro)
             conn.close()
 
             msg = f"Importação concluída. {total_ok} lançamento(s) importado(s)."
             if total_ignorados:
                 msg += f" {total_ignorados} linha(s) ignorada(s) (obra ou categoria não encontrada)."
             flash(msg, "sucesso")
+            _avisar_conflitos(registro, conflitos)
             return redirect(url_for("importar_dados"))
 
         except Exception as e:
+            app.logger.exception("Falha ao processar planilha simples")
             flash(f"Erro ao processar a planilha: {str(e)}", "erro")
             return redirect(url_for("importar_dados"))
 
-    return render_template("importar_dados.html")
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT i.*, e.nome AS empresa_nome, u.nome AS usuario_nome
+        FROM importacoes i
+        LEFT JOIN empresas e ON e.id = i.empresa_id
+        LEFT JOIN usuarios u ON u.id = i.usuario_id
+        ORDER BY i.id DESC LIMIT 10
+    """)
+    historico = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
+    # Só a importação mais recente ainda ativa pode ser desfeita: reverter uma
+    # antiga por cima de outra mais nova ressuscitaria valores obsoletos.
+    id_reversivel = next((h["id"] for h in historico if not h["desfeita_em"]), None)
+
+    return render_template("importar_dados.html", historico=historico, id_reversivel=id_reversivel)
 
 
 def _detectar_nome_empresa(caminho_arquivo, nomes_abas):
@@ -980,7 +1153,69 @@ def _obter_ou_criar_empresa(cur, nome_empresa):
     return cur.lastrowid
 
 
-def _importar_arquivo_dre_real(caminho_arquivo):
+def _criar_registro_importacao(cur, arquivo, empresa_id):
+    cur.execute(
+        """
+        INSERT INTO importacoes (arquivo, empresa_id, usuario_id, criado_em)
+        VALUES (?, ?, ?, ?)
+        """,
+        (arquivo, empresa_id, session.get("usuario_id"), datetime.datetime.now().isoformat()),
+    )
+    return cur.lastrowid
+
+
+def _fechar_registro_importacao(cur, importacao_id, registro):
+    cur.execute(
+        """
+        UPDATE importacoes
+        SET lancamentos_gravados = ?, saldos_gravados = ?,
+            manuais_preservados = ?, manuais_sobrescritos = ?
+        WHERE id = ?
+        """,
+        (registro.lancamentos_gravados, registro.saldos_gravados,
+         registro.manuais_preservados, registro.manuais_sobrescritos, importacao_id),
+    )
+
+
+def _descrever_conflitos(cur, registro):
+    """Troca os ids da amostra de conflitos por nomes, para a mensagem na tela."""
+    descritos = []
+    for c in registro.conflitos:
+        cur.execute("SELECT nome FROM obras WHERE id = ?", (c["obra_id"],))
+        obra = cur.fetchone()
+        cur.execute("SELECT nome FROM categorias_conta WHERE id = ?", (c["categoria_id"],))
+        categoria = cur.fetchone()
+        descritos.append(
+            f"{obra['nome'] if obra else c['obra_id']} · "
+            f"{categoria['nome'] if categoria else c['categoria_id']} · "
+            f"{MESES_ABREV[c['mes']]}/{c['ano']}: "
+            f"manteve {filtro_moeda(c['valor_manual'])} "
+            f"(planilha trazia {filtro_moeda(c['valor_planilha'])})"
+        )
+    return descritos
+
+
+def _avisar_conflitos(registro, conflitos):
+    if registro.manuais_preservados:
+        flash(
+            f"{registro.manuais_preservados} valor(es) lançado(s) manualmente foram "
+            f"PRESERVADOS e não vieram da planilha. Para que a planilha prevaleça, "
+            f"reenvie marcando a opção de sobrescrever lançamentos manuais.",
+            "erro",
+        )
+        for descricao in conflitos:
+            flash(f"Preservado — {descricao}", "erro")
+
+    if registro.manuais_sobrescritos:
+        flash(
+            f"{registro.manuais_sobrescritos} valor(es) lançado(s) manualmente foram "
+            f"substituídos pelos da planilha, conforme solicitado. Use 'Desfazer' "
+            f"abaixo se não era o esperado.",
+            "erro",
+        )
+
+
+def _importar_arquivo_dre_real(caminho_arquivo, nome_arquivo, sobrescrever_manuais):
     conn = conectar()
     cur = conn.cursor()
 
@@ -992,15 +1227,21 @@ def _importar_arquivo_dre_real(caminho_arquivo):
     empresa_id = _obter_ou_criar_empresa(cur, nome_empresa)
     conn.commit()
 
+    importacao_id = _criar_registro_importacao(cur, nome_arquivo, empresa_id)
+    registro = RegistroImportacao(cur, importacao_id, sobrescrever_manuais)
+
     try:
-        resumo = importar_planilha_dre_real(caminho_arquivo, cur, empresa_id)
+        resumo = importar_planilha_dre_real(caminho_arquivo, cur, empresa_id, registro)
+        _fechar_registro_importacao(cur, importacao_id, registro)
         conn.commit()
     except Exception as e:
         conn.rollback()
         conn.close()
+        app.logger.exception("Falha ao processar arquivo de DRE")
         flash(f"Erro ao processar o arquivo: {str(e)}", "erro")
         return redirect(url_for("importar_dados"))
 
+    conflitos = _descrever_conflitos(cur, registro)
     conn.close()
 
     partes = [
@@ -1018,6 +1259,7 @@ def _importar_arquivo_dre_real(caminho_arquivo):
         partes.append(f"{len(resumo['abas_ignoradas'])} aba(s) ignorada(s) (veja detalhes abaixo).")
 
     flash(" ".join(partes), "sucesso")
+    _avisar_conflitos(registro, conflitos)
 
     for nome_aba, motivo in resumo["abas_ignoradas"]:
         flash(f"Aba '{nome_aba}' ignorada: {motivo}", "erro")
@@ -1025,7 +1267,53 @@ def _importar_arquivo_dre_real(caminho_arquivo):
     return redirect(url_for("importar_dados"))
 
 
+@app.route("/importacoes/<int:importacao_id>/desfazer", methods=["POST"])
+def desfazer_importacao_rota(importacao_id):
+    redir = exigir_login()
+    if redir:
+        return redir
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM importacoes WHERE desfeita_em IS NULL ORDER BY id DESC LIMIT 1")
+    mais_recente = cur.fetchone()
+
+    if not mais_recente or mais_recente["id"] != importacao_id:
+        conn.close()
+        flash(
+            "Só é possível desfazer a importação mais recente. Desfazer uma antiga "
+            "por cima de outra mais nova traria de volta valores já superados.",
+            "erro",
+        )
+        return redirect(url_for("importar_dados"))
+
+    try:
+        resultado = desfazer_importacao(cur, importacao_id)
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        conn.close()
+        flash(str(e), "erro")
+        return redirect(url_for("importar_dados"))
+    except Exception:
+        conn.rollback()
+        conn.close()
+        app.logger.exception("Falha ao desfazer importação")
+        flash("Erro inesperado ao desfazer a importação. Nada foi alterado.", "erro")
+        return redirect(url_for("importar_dados"))
+
+    conn.close()
+
+    flash(
+        f"Importação desfeita. {resultado['restaurados']} valor(es) voltaram ao que eram antes "
+        f"e {resultado['removidos']} valor(es) criados por ela foram removidos.",
+        "sucesso",
+    )
+    return redirect(url_for("importar_dados"))
+
+
 if __name__ == "__main__":
-    criar_pastas()
-    criar_tabelas()
-    app.run(debug=True)
+    # debug=True expõe um console Python remoto a quem alcançar a porta.
+    # Fica desligado por padrão; ligue com INOV_DEBUG=1 durante o desenvolvimento.
+    app.run(debug=os.environ.get("INOV_DEBUG") == "1")

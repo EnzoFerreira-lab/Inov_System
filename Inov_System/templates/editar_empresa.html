@@ -26,6 +26,7 @@
 
     <div>
         <form method="POST">
+            {{ campo_csrf() }}
             <div class="form-group">
                 <label for="emp-nome">Nome da empresa</label>
                 <input class="input" id="emp-nome" type="text" name="nome" value="{{ empresa['nome'] }}" required>
@@ -53,6 +54,7 @@
         </p>
         <form method="POST" action="{{ url_for('excluir_empresa', empresa_id=empresa['id']) }}"
               onsubmit="return confirm('Excluir a empresa {{ empresa['nome'] }}? Essa ação não pode ser desfeita.');">
+            {{ campo_csrf() }}
             <button class="btn btn-danger" type="submit">Excluir empresa</button>
         </form>
     </div>

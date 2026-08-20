@@ -5,19 +5,27 @@
 {% block titulo %}Totais Consolidado{% endblock %}
 {% block cabecalho %}Totais Consolidado{% endblock %}
 {% block descricao %}
-    Resultado de todas as obras somadas, equivalente à aba "TOTAIS" da planilha —
-    porém calculado ao vivo a partir dos lançamentos.
+    Soma de {{ total_obras }} obra(s){% if empresa_id %} da empresa selecionada{% endif %},
+    equivalente à aba "TOTAIS" da planilha — porém calculado ao vivo a partir dos lançamentos.
 {% endblock %}
 
 {% block acoes %}
     <form method="GET" class="row">
+        {% if empresas|length > 1 %}
+        <select class="select input-sm" name="empresa_id" onchange="this.form.submit()" aria-label="Empresa">
+            <option value="">Todas as empresas</option>
+            {% for e in empresas %}
+                <option value="{{ e.id }}" {{ 'selected' if e.id == empresa_id }}>{{ e.nome }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
         <select class="select input-sm" name="ano" onchange="this.form.submit()" aria-label="Ano">
-            {% for a in range(ano - 3, ano + 2) %}
+            {% for a in anos %}
                 <option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>
             {% endfor %}
         </select>
     </form>
-    <a href="{{ url_for('exportar_totais_excel') }}?ano={{ ano }}" class="btn btn-primary">
+    <a href="{{ url_for('exportar_totais_excel', ano=ano, empresa_id=empresa_id) }}" class="btn btn-primary">
         {{ icon('exportar') }} Exportar Excel
     </a>
     <button type="button" class="btn btn-light" onclick="window.print()" title="Imprimir ou salvar em PDF">

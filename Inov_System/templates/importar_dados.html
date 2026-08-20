@@ -10,6 +10,7 @@
 
 <div class="card">
     <form method="POST" enctype="multipart/form-data">
+        {{ campo_csrf() }}
         <div class="card-section">
             <div class="upload-box" id="areaUpload">
                 {{ icon('planilha') }}
@@ -23,9 +24,87 @@
 
                 <div class="helper-text" style="margin-top:12px;">Formatos aceitos: .xlsx e .xls</div>
             </div>
+
+            <div class="callout mt-2">
+                {{ icon('info') }}
+                <div>
+                    <strong>Valores lançados à mão são preservados.</strong>
+                    Se alguém corrigiu um valor pela tela de Lançar Dados, a planilha não passa
+                    por cima dele — o conflito é listado aqui depois da importação, com o valor
+                    de cada lado, para você decidir.
+                    <label class="row text-sm" style="margin-top:8px; cursor:pointer;">
+                        <input type="checkbox" name="sobrescrever_manuais" value="1">
+                        Desta vez, deixar a planilha sobrescrever os lançamentos manuais
+                    </label>
+                </div>
+            </div>
         </div>
     </form>
 </div>
+
+{% if historico %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Importações recentes</h2>
+            <p>Cada importação guarda o valor anterior de tudo que alterou. Desfazer devolve os
+               valores exatamente como estavam — só a mais recente pode ser desfeita.</p>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th class="shrink">Quando</th>
+                    <th>Arquivo</th>
+                    <th class="shrink num">Gravados</th>
+                    <th class="shrink num">Manuais</th>
+                    <th class="shrink">Situação</th>
+                    <th class="shrink"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for h in historico %}
+                <tr>
+                    <td class="nowrap text-muted">{{ h.criado_em[:16]|replace('T', ' ') }}</td>
+                    <td class="primary-cell">
+                        {{ h.arquivo }}
+                        {% if h.empresa_nome %}<span class="sub">{{ h.empresa_nome }}</span>{% endif %}
+                    </td>
+                    <td class="num">{{ h.lancamentos_gravados }}</td>
+                    <td class="num">
+                        {% if h.manuais_preservados %}
+                            <span class="badge warning" title="preservados">{{ h.manuais_preservados }} mantidos</span>
+                        {% elif h.manuais_sobrescritos %}
+                            <span class="badge danger" title="sobrescritos">{{ h.manuais_sobrescritos }} trocados</span>
+                        {% else %}
+                            <span class="text-faint">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if h.desfeita_em %}
+                            <span class="badge neutral">Desfeita</span>
+                        {% else %}
+                            <span class="badge success">Aplicada</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if h.id == id_reversivel %}
+                        <form method="POST" action="{{ url_for('desfazer_importacao_rota', importacao_id=h.id) }}"
+                              onsubmit="return confirm('Desfazer esta importação? Todos os valores que ela alterou voltam ao que eram antes.');">
+                            {{ campo_csrf() }}
+                            <button class="btn btn-light btn-sm" type="submit">{{ icon('voltar') }} Desfazer</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 
 <div class="card">
     <div class="card-header">

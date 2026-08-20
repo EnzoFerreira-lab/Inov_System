@@ -27,6 +27,7 @@
 
     <div>
         <form method="POST">
+            {{ campo_csrf() }}
             <div class="form-grid">
                 <div class="full">
                     <div class="form-group">
@@ -84,6 +85,7 @@
         </p>
         <form method="POST" action="{{ url_for('excluir_obra', obra_id=obra['id']) }}"
               onsubmit="return confirm('Excluir a obra {{ obra['codigo'] }} e TODOS os lançamentos dela? Essa ação não pode ser desfeita.');">
+            {{ campo_csrf() }}
             <button class="btn btn-danger" type="submit">Excluir obra</button>
         </form>
     </div>

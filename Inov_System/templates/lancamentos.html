@@ -76,6 +76,7 @@
     </div>
 
     <form method="POST" id="gradeLancamentos">
+        {{ campo_csrf() }}
         <input type="hidden" name="obra_id" value="{{ obra_id }}">
         <input type="hidden" name="mes" value="{{ mes }}">
         <input type="hidden" name="ano" value="{{ ano }}">

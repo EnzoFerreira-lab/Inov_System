@@ -11,14 +11,24 @@
 
 {% block acoes %}
     <form method="GET" class="row">
+        {% if empresas|length > 1 %}
+        <select class="select input-sm" name="empresa_id" onchange="this.form.submit()" aria-label="Empresa">
+            <option value="">Todas as empresas</option>
+            {% for e in empresas %}
+                <option value="{{ e.id }}" {{ 'selected' if e.id == empresa_id }}>{{ e.nome }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
         <select class="select input-sm" name="ano" onchange="this.form.submit()" aria-label="Ano">
-            {% for a in range(ano_atual - 3, ano_atual + 2) %}
+            {% for a in anos %}
                 <option value="{{ a }}" {{ 'selected' if a == ano_atual }}>{{ a }}</option>
             {% endfor %}
         </select>
     </form>
     <a href="{{ url_for('obras') }}" class="btn btn-light">{{ icon('obras') }} Obras</a>
-    <a href="{{ url_for('totais') }}" class="btn btn-primary">{{ icon('totais') }} DRE consolidado</a>
+    <a href="{{ url_for('totais', ano=ano_atual, empresa_id=empresa_id) }}" class="btn btn-primary">
+        {{ icon('totais') }} DRE consolidado
+    </a>
 {% endblock %}
 
 {% block conteudo %}

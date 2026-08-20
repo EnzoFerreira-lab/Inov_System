@@ -228,7 +228,166 @@ PADRAO_TITULO_MES_ANO = re.compile(
 )
 
 
-def importar_depto_tecnico(ws, cur, empresa_id_padrao, cache_categorias, resumo):
+class RegistroImportacao:
+    """
+    Intermedia toda gravação feita por uma importação.
+
+    Existe por dois motivos:
+
+    1. **Não perder correção manual.** Um valor ajustado à mão na tela de
+       Lançar Dados fica com origem='manual'. Reimportar o mesmo mês
+       sobrescrevia esse ajuste em silêncio. Agora, por padrão, o valor manual
+       é preservado e o conflito é reportado — quem importa decide.
+
+    2. **Poder desfazer.** Antes de alterar uma célula, o estado anterior é
+       gravado em importacao_itens, o que permite reverter um arquivo enviado
+       por engano sem restaurar o banco inteiro.
+
+    Sem importacao_id (usado nos testes), grava normalmente mas não registra
+    histórico.
+    """
+
+    LIMITE_CONFLITOS = 25  # amostra suficiente para a tela; não guarda os 17 mil
+
+    def __init__(self, cur, importacao_id=None, sobrescrever_manuais=False):
+        self.cur = cur
+        self.importacao_id = importacao_id
+        self.sobrescrever_manuais = sobrescrever_manuais
+
+        self.lancamentos_gravados = 0
+        self.saldos_gravados = 0
+        self.manuais_preservados = 0
+        self.manuais_sobrescritos = 0
+        self.conflitos = []
+
+    def _registrar_item(self, tabela, obra_id, categoria_id, anterior,
+                        mes=None, ano=None, periodo=None):
+        if self.importacao_id is None:
+            return
+
+        self.cur.execute(
+            """
+            INSERT INTO importacao_itens
+                (importacao_id, tabela, obra_id, categoria_id, mes, ano,
+                 periodo_descricao, existia, valor_anterior, origem_anterior)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (self.importacao_id, tabela, obra_id, categoria_id, mes, ano, periodo,
+             1 if anterior else 0,
+             anterior["valor"] if anterior else None,
+             anterior["origem"] if anterior else None),
+        )
+
+    def gravar_lancamento(self, obra_id, categoria_id, mes, ano, valor, agora):
+        """Grava um valor mensal. Devolve False se preservou um lançamento manual."""
+        self.cur.execute(
+            "SELECT valor, origem FROM lancamentos "
+            "WHERE obra_id = ? AND categoria_id = ? AND mes = ? AND ano = ?",
+            (obra_id, categoria_id, mes, ano),
+        )
+        anterior = self.cur.fetchone()
+
+        if anterior and anterior["origem"] == "manual":
+            if not self.sobrescrever_manuais:
+                self.manuais_preservados += 1
+                if len(self.conflitos) < self.LIMITE_CONFLITOS:
+                    self.conflitos.append({
+                        "obra_id": obra_id, "categoria_id": categoria_id,
+                        "mes": mes, "ano": ano,
+                        "valor_manual": anterior["valor"], "valor_planilha": valor,
+                    })
+                return False
+            self.manuais_sobrescritos += 1
+
+        self._registrar_item("lancamentos", obra_id, categoria_id, anterior, mes=mes, ano=ano)
+
+        self.cur.execute(
+            """
+            INSERT INTO lancamentos (obra_id, categoria_id, mes, ano, valor, origem, atualizado_em)
+            VALUES (?, ?, ?, ?, ?, 'importacao', ?)
+            ON CONFLICT (obra_id, categoria_id, mes, ano)
+            DO UPDATE SET valor = excluded.valor, origem = 'importacao',
+                          atualizado_em = excluded.atualizado_em
+            """,
+            (obra_id, categoria_id, mes, ano, valor, agora),
+        )
+        self.lancamentos_gravados += 1
+        return True
+
+    def gravar_saldo_anterior(self, obra_id, categoria_id, periodo, valor, agora):
+        """Grava um período histórico agregado (ex: 'Out a Dez/2025')."""
+        self.cur.execute(
+            "SELECT valor, origem FROM saldos_anteriores "
+            "WHERE obra_id = ? AND categoria_id = ? AND periodo_descricao = ?",
+            (obra_id, categoria_id, periodo),
+        )
+        anterior = self.cur.fetchone()
+
+        self._registrar_item("saldos_anteriores", obra_id, categoria_id, anterior, periodo=periodo)
+
+        self.cur.execute(
+            """
+            INSERT INTO saldos_anteriores
+                (obra_id, categoria_id, periodo_descricao, valor, origem, atualizado_em)
+            VALUES (?, ?, ?, ?, 'importacao', ?)
+            ON CONFLICT (obra_id, categoria_id, periodo_descricao)
+            DO UPDATE SET valor = excluded.valor, atualizado_em = excluded.atualizado_em
+            """,
+            (obra_id, categoria_id, periodo, valor, agora),
+        )
+        self.saldos_gravados += 1
+        return True
+
+
+def desfazer_importacao(cur, importacao_id):
+    """
+    Reverte uma importação, devolvendo cada célula ao valor que tinha antes.
+    Linhas que a importação criou do zero são apagadas.
+
+    Só faz sentido desfazer a importação mais recente ainda ativa — desfazer uma
+    antiga por cima de outra mais nova ressuscitaria valores obsoletos. Quem
+    chama é responsável por essa checagem (ver a rota em app.py).
+    """
+    cur.execute("SELECT * FROM importacoes WHERE id = ?", (importacao_id,))
+    importacao = cur.fetchone()
+    if not importacao:
+        raise ValueError("Importação não encontrada.")
+    if importacao["desfeita_em"]:
+        raise ValueError("Essa importação já foi desfeita.")
+
+    cur.execute("SELECT * FROM importacao_itens WHERE importacao_id = ?", (importacao_id,))
+    itens = cur.fetchall()
+
+    restaurados = 0
+    removidos = 0
+
+    for item in itens:
+        if item["tabela"] == "lancamentos":
+            onde = "obra_id = ? AND categoria_id = ? AND mes = ? AND ano = ?"
+            chave = (item["obra_id"], item["categoria_id"], item["mes"], item["ano"])
+        else:
+            onde = "obra_id = ? AND categoria_id = ? AND periodo_descricao = ?"
+            chave = (item["obra_id"], item["categoria_id"], item["periodo_descricao"])
+
+        if item["existia"]:
+            cur.execute(
+                f"UPDATE {item['tabela']} SET valor = ?, origem = ? WHERE {onde}",
+                (item["valor_anterior"], item["origem_anterior"] or "importacao") + chave,
+            )
+            restaurados += 1
+        else:
+            cur.execute(f"DELETE FROM {item['tabela']} WHERE {onde}", chave)
+            removidos += 1
+
+    cur.execute(
+        "UPDATE importacoes SET desfeita_em = ? WHERE id = ?",
+        (datetime.datetime.now().isoformat(), importacao_id),
+    )
+
+    return {"restaurados": restaurados, "removidos": removidos}
+
+
+def importar_depto_tecnico(ws, cur, empresa_id_padrao, cache_categorias, resumo, registro):
     """
     Lê a aba 'DEPTO TÉCNICO' (formato diferente das obras: rótulo na coluna B,
     um único mês de valores na coluna C, sem as taxas de imposto — é despesa
@@ -282,26 +441,25 @@ def importar_depto_tecnico(ws, cur, empresa_id_padrao, cache_categorias, resumo)
 
             valor = valor_bruto if tipo == "receita" else -valor_bruto
 
-            cur.execute(
-                """
-                INSERT INTO lancamentos (obra_id, categoria_id, mes, ano, valor, origem, atualizado_em)
-                VALUES (?, ?, ?, ?, ?, 'importacao', ?)
-                ON CONFLICT (obra_id, categoria_id, mes, ano)
-                DO UPDATE SET valor = excluded.valor, origem = 'importacao', atualizado_em = excluded.atualizado_em
-                """,
-                (obra_id, categoria_id, mes, ano, valor, agora),
-            )
-            resumo["lancamentos_gravados"] += 1
+            if registro.gravar_lancamento(obra_id, categoria_id, mes, ano, valor, agora):
+                resumo["lancamentos_gravados"] += 1
 
     return True
 
 
-def importar_planilha_dre_real(caminho_arquivo, cur, empresa_id_padrao):
+def importar_planilha_dre_real(caminho_arquivo, cur, empresa_id_padrao, registro=None):
     """
     Lê o arquivo real de DRE (multi-abas) e grava obras/categorias/lançamentos.
     Retorna um dicionário com o resumo da importação.
+
+    'registro' é um RegistroImportacao, que preserva lançamentos manuais e
+    guarda o estado anterior para permitir desfazer. Se não vier um, cria um
+    sem histórico (comportamento útil em teste e em scripts).
     """
     wb = openpyxl.load_workbook(caminho_arquivo, data_only=True)
+
+    if registro is None:
+        registro = RegistroImportacao(cur)
 
     cache_categorias = _carregar_cache_categorias(cur)
 
@@ -325,7 +483,7 @@ def importar_planilha_dre_real(caminho_arquivo, cur, empresa_id_padrao):
 
         if "DEPTO" in nome_upper or "DEPARTAMENTO" in nome_upper:
             ws = wb[sheet_name]
-            sucesso = importar_depto_tecnico(ws, cur, empresa_id_padrao, cache_categorias, resumo)
+            sucesso = importar_depto_tecnico(ws, cur, empresa_id_padrao, cache_categorias, resumo, registro)
             if sucesso:
                 resumo["abas_processadas"].append(sheet_name)
             else:
@@ -386,16 +544,8 @@ def importar_planilha_dre_real(caminho_arquivo, cur, empresa_id_padrao):
                     # o sinal): receita fica como está; custo inverte o sinal.
                     valor = valor_bruto if tipo == "receita" else -valor_bruto
 
-                    cur.execute(
-                        """
-                        INSERT INTO lancamentos (obra_id, categoria_id, mes, ano, valor, origem, atualizado_em)
-                        VALUES (?, ?, ?, ?, ?, 'importacao', ?)
-                        ON CONFLICT (obra_id, categoria_id, mes, ano)
-                        DO UPDATE SET valor = excluded.valor, origem = 'importacao', atualizado_em = excluded.atualizado_em
-                        """,
-                        (obra_id, categoria_id, mes, ano, valor, agora),
-                    )
-                    resumo["lancamentos_gravados"] += 1
+                    if registro.gravar_lancamento(obra_id, categoria_id, mes, ano, valor, agora):
+                        resumo["lancamentos_gravados"] += 1
 
                 for col_idx, periodo_texto in colunas_historicas.items():
                     valor_bruto = ws.cell(row=r, column=col_idx).value
@@ -410,16 +560,8 @@ def importar_planilha_dre_real(caminho_arquivo, cur, empresa_id_padrao):
 
                     valor = valor_bruto if tipo == "receita" else -valor_bruto
 
-                    cur.execute(
-                        """
-                        INSERT INTO saldos_anteriores (obra_id, categoria_id, periodo_descricao, valor, origem, atualizado_em)
-                        VALUES (?, ?, ?, ?, 'importacao', ?)
-                        ON CONFLICT (obra_id, categoria_id, periodo_descricao)
-                        DO UPDATE SET valor = excluded.valor, atualizado_em = excluded.atualizado_em
-                        """,
-                        (obra_id, categoria_id, periodo_texto, valor, agora),
-                    )
-                    resumo["saldos_anteriores_gravados"] += 1
+                    if registro.gravar_saldo_anterior(obra_id, categoria_id, periodo_texto, valor, agora):
+                        resumo["saldos_anteriores_gravados"] += 1
 
         resumo["abas_processadas"].append(sheet_name)
 

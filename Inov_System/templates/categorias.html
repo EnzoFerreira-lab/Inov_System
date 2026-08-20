@@ -91,10 +91,15 @@
                     </td>
                     <td>
                         <div class="row-actions">
-                            <a class="btn btn-light btn-sm"
-                               href="{{ url_for('alternar_status_categoria', categoria_id=cat['id']) }}">
-                                {{ 'Desativar' if cat['ativo'] else 'Ativar' }}
-                            </a>
+                            {# Formulário, não link: ativar/desativar altera dado e
+                               por isso precisa de POST com token. #}
+                            <form method="POST"
+                                  action="{{ url_for('alternar_status_categoria', categoria_id=cat['id']) }}">
+                                {{ campo_csrf() }}
+                                <button class="btn btn-light btn-sm" type="submit">
+                                    {{ 'Desativar' if cat['ativo'] else 'Ativar' }}
+                                </button>
+                            </form>
                         </div>
                     </td>
                 </tr>
@@ -124,6 +129,7 @@
         </div>
 
         <form method="POST">
+            {{ campo_csrf() }}
             <div class="modal-body">
                 <div class="form-grid">
                     <div class="form-group">

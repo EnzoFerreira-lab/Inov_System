@@ -116,6 +116,7 @@
         </div>
 
         <form method="POST">
+            {{ campo_csrf() }}
             <div class="modal-body">
                 {% if not empresas %}
                 <div class="callout mb-2">

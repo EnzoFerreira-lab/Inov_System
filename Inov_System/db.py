@@ -100,6 +100,48 @@ def criar_tabelas():
         )
     """)
 
+    # Cada importação vira um registro, e cada valor que ela alterou guarda o
+    # estado anterior. É o que permite desfazer um arquivo enviado por engano
+    # sem restaurar o banco inteiro.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS importacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            arquivo TEXT NOT NULL,
+            empresa_id INTEGER,
+            usuario_id INTEGER,
+            criado_em TEXT NOT NULL,
+            lancamentos_gravados INTEGER NOT NULL DEFAULT 0,
+            saldos_gravados INTEGER NOT NULL DEFAULT 0,
+            manuais_preservados INTEGER NOT NULL DEFAULT 0,
+            manuais_sobrescritos INTEGER NOT NULL DEFAULT 0,
+            desfeita_em TEXT,
+            FOREIGN KEY (empresa_id) REFERENCES empresas(id),
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS importacao_itens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            importacao_id INTEGER NOT NULL,
+            tabela TEXT NOT NULL CHECK (tabela IN ('lancamentos', 'saldos_anteriores')),
+            obra_id INTEGER NOT NULL,
+            categoria_id INTEGER NOT NULL,
+            mes INTEGER,
+            ano INTEGER,
+            periodo_descricao TEXT,
+            existia INTEGER NOT NULL,
+            valor_anterior REAL,
+            origem_anterior TEXT,
+            FOREIGN KEY (importacao_id) REFERENCES importacoes(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_importacao_itens_importacao
+        ON importacao_itens (importacao_id)
+    """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS taxas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

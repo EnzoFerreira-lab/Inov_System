@@ -19,6 +19,7 @@
         {% include '_flash.html' %}
 
         <form method="POST">
+            {{ campo_csrf() }}
             <div class="form-group">
                 <label for="email">E-mail</label>
                 <input class="input" type="email" name="email" id="email"

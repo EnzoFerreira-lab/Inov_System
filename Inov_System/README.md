@@ -38,7 +38,39 @@ python app.py
 Acesse http://localhost:5000 — login padrão: `admin@inov.com` / `1234` (troque depois).
 
 O banco `database.db` é criado automaticamente na primeira execução, já com o plano de
-contas e as taxas padrão cadastrados.
+contas e as taxas padrão cadastrados. O schema é aplicado ao importar o módulo, então
+funciona igual servido por WSGI (gunicorn/waitress), não só por `python app.py`.
+
+### Configuração
+
+| Variável | Para que serve |
+|---|---|
+| `INOV_SECRET_KEY` | Assina o cookie de sessão. **Obrigatória em produção** — sem ela, o sistema sorteia uma chave nova a cada inicialização e todo mundo é deslogado no restart. |
+| `INOV_DEBUG=1` | Liga o modo debug do Flask. Só em desenvolvimento: expõe um console Python a quem alcançar a porta. |
+
+### Testes
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+51 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
+
+- **`test_calculo_dre.py`** — a matemática do DRE com números conferíveis de cabeça,
+  incluindo a vigência das taxas (reajustar hoje não pode alterar mês já fechado).
+- **`test_importacao.py`** — preservação de lançamento manual e o desfazer.
+- **`test_web.py`** — login, CSRF, todas as telas, exportações e formatação BR.
+- **`test_regressao_dados_reais.py`** — trava os números validados de 2026 contra o
+  `database.db`. É pulado automaticamente onde o banco não existe. Se uma importação
+  mudar legitimamente os dados, confira contra a planilha e regenere os valores com
+  `python -m tests.gerar_valores_travados`.
+
+### Backup
+
+O `database.db` **não** é versionado no git — ele guarda a contabilidade real do cliente,
+e o histórico do git manteria uma cópia para sempre, mesmo depois de apagada. Para backup,
+copie o arquivo (com o sistema parado) ou use `sqlite3 database.db ".backup copia.db"`,
+que funciona com o sistema no ar.
 
 ## O que já existe nesta versão
 
@@ -80,6 +112,29 @@ e **números tabulares** (todo dígito com a mesma largura, para as colunas de v
 - `static/css/style.css` é a única folha de estilo — nenhum `<style>` solto nos templates.
 - Impressão: `Ctrl+P` em qualquer DRE sai limpo (sem menu nem botões), pronto para PDF.
 
+## Segurança e integridade dos dados
+
+- **CSRF em todo POST.** Cada formulário carrega um token ligado à sessão e o servidor
+  recusa qualquer alteração sem ele. Sem isso, uma página em outro site conseguiria
+  disparar ações destrutivas usando a sessão de quem estivesse logado — e excluir uma
+  obra apaga todos os lançamentos dela.
+- **Nada altera dado por GET.** Ativar/desativar categoria era um link; virou formulário
+  com POST. Links que alteram estado são disparados por pré-carregamento do navegador.
+- **Chave de sessão fora do código** (`INOV_SECRET_KEY`) e debug desligado por padrão.
+- **Importação não sobrescreve correção manual.** Um valor ajustado na tela de Lançar
+  Dados fica com `origem='manual'`; a importação preserva esse valor e lista o conflito,
+  mostrando os dois lados. Quem importa pode optar explicitamente por deixar a planilha
+  prevalecer, marcando uma caixa na tela de envio.
+- **Toda importação pode ser desfeita.** Cada valor alterado guarda o estado anterior em
+  `importacao_itens`; desfazer devolve tudo ao que era, inclusive a origem `manual`.
+  Só a importação mais recente pode ser revertida — desfazer uma antiga por cima de outra
+  mais nova ressuscitaria valores já superados.
+- **Consolidado por empresa.** `/totais` e `/dashboard` aceitam `empresa_id`. Antes somavam
+  as obras de todas as empresas juntas: com um cliente só ninguém percebia, mas o segundo
+  cliente tornaria o número errado sem gerar erro nenhum.
+- **Erros reais vão para o log.** Antes, qualquer falha ao salvar virava a mesma mensagem
+  sobre CNPJ duplicado, escondendo o problema de verdade.
+
 ## Próximos passos sugeridos
 
 - Login com permissão por usuário (ex: um usuário só vê certas obras)
@@ -95,11 +150,13 @@ e **números tabulares** (todo dígito com a mesma largura, para as colunas de v
 ## Estrutura
 
 ```
-app.py        -> rotas Flask + filtros de formatação (moeda, pct, data_br...)
+app.py        -> rotas Flask, CSRF e filtros de formatação (moeda, pct, data_br...)
 db.py         -> schema do banco + seed do plano de contas e taxas
 dre.py        -> motor de cálculo do DRE
-dre_import.py -> leitura do arquivo real multi-abas da contabilidade
+dre_import.py -> leitura do arquivo real multi-abas + RegistroImportacao (preserva
+                 lançamento manual, guarda estado anterior) e desfazer_importacao
 dre_export.py -> geração do Excel do DRE
+tests/        -> suíte de testes (unittest, sem dependência externa)
 templates/
   base.html     -> layout de todas as telas internas
   _sidebar.html -> menu lateral
