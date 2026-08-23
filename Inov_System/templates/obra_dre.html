@@ -70,41 +70,6 @@
     </div>
 </div>
 
-{% if saldos_anteriores %}
-<div class="card">
-    <div class="card-header">
-        <div>
-            <h2>Períodos históricos</h2>
-            <p>Blocos de meses já agregados na planilha original (ex: "Out a Dez/2025"), anteriores ao
-               controle mês a mês. Ficam registrados aqui para não se perder nenhum valor, mas
-               <strong>não entram</strong> na tabela nem no acumulado de {{ ano }}.</p>
-        </div>
-    </div>
-    <div class="table-wrap">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Período</th>
-                    <th class="num">Receita</th>
-                    <th class="num">Custos</th>
-                    <th class="num">Resultado</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for s in saldos_anteriores %}
-                <tr>
-                    <td class="primary-cell">{{ s.periodo }}</td>
-                    <td class="num">{{ s.receita_total|moeda }}</td>
-                    <td class="num valor-neg">{{ (-s.custos_total)|moeda }}</td>
-                    <td class="num {{ 'valor-neg' if s.resultado < 0 else 'valor-pos' }}">{{ s.resultado|moeda }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
 {% set receitas = categorias|selectattr('tipo', 'equalto', 'receita')|list %}
 {% set custos = categorias|selectattr('tipo', 'equalto', 'custo')|list %}
 {% set zeradas = categorias|rejectattr('total')|list %}
@@ -126,107 +91,108 @@
         </div>
     </div>
 
+    {#
+       Macros para não repetir a mesma sequência de colunas em cada linha.
+       A ordem reproduz a planilha: períodos antigos, meses do ano, total do ano
+       e total geral.
+    #}
+    {% macro celula(v, negativo=false) %}
+        {%- if v -%}
+            <td class="{{ 'valor-neg' if negativo }}">{{ (-v if negativo else v)|moeda }}</td>
+        {%- else -%}
+            <td class="zero">–</td>
+        {%- endif -%}
+    {% endmacro %}
+
+    {% macro linha_conta(cat, negativo) %}
+    <tr data-conta {{ 'data-zerada' if not (cat.total or (cat.total_historico or 0)) }}>
+        <td>{{ cat.nome }}{% if cat.codigo %}<span class="cat-code">{{ cat.codigo }}</span>{% endif %}</td>
+        {% for p in periodos_historicos %}
+            {{ celula(cat.historicos.get(p, 0), negativo) }}
+        {% endfor %}
+        {# Valor mensal é clicável: abre os lançamentos contábeis que o formaram #}
+        {% for a, m in meses %}
+            {% set v = cat.valores.get((a, m), 0) %}
+            {% if v %}
+                <td class="{{ 'valor-neg' if negativo }}">
+                    <a class="celula-link"
+                       href="{{ url_for('detalhe_da_celula', obra_id=obra['id'], categoria_id=cat.id, mes=m, ano=a) }}"
+                       title="Ver os lançamentos de {{ meses_nome[m] }}">{{ (-v if negativo else v)|moeda }}</a>
+                </td>
+            {% else %}
+                <td class="zero">–</td>
+            {% endif %}
+        {% endfor %}
+        {{ celula(cat.total, negativo) }}
+        {{ celula(cat.total + (cat.total_historico or 0), negativo) }}
+    </tr>
+    {% endmacro %}
+
+    {% macro linha_total(rotulo, campo, classe, negativo=false) %}
+    <tr class="{{ classe }}">
+        <td>{{ rotulo }}</td>
+        {% for p in periodos_historicos %}
+            {{ celula(totais_historicos[p][campo], negativo) }}
+        {% endfor %}
+        {% set positivo = 'valor-pos' if classe == 'resultado' else '' %}
+        {% for a, m in meses %}
+            {% set v = totais[(a, m)][campo] %}
+            {% if negativo %}{{ celula(v, true) }}{% else %}<td class="{{ 'valor-neg' if v < 0 else positivo }}">{{ v|moeda }}</td>{% endif %}
+        {% endfor %}
+        {% if negativo %}
+            {{ celula(acumulado[campo], true) }}
+            {{ celula(total_geral[campo], true) }}
+        {% else %}
+            <td class="{{ 'valor-neg' if acumulado[campo] < 0 else positivo }}">{{ acumulado[campo]|moeda }}</td>
+            <td class="{{ 'valor-neg' if total_geral[campo] < 0 else positivo }}">{{ total_geral[campo]|moeda }}</td>
+        {% endif %}
+    </tr>
+    {% endmacro %}
+
+    {% set n_colunas = periodos_historicos|length + meses|length + 2 %}
+
     <div class="dre-wrap">
         <table class="dre">
             <thead>
+                {% if periodos_historicos %}
+                <tr class="faixa-grupos">
+                    <th></th>
+                    <th colspan="{{ periodos_historicos|length }}">Períodos anteriores (bloco anual)</th>
+                    <th colspan="{{ meses|length }}">{{ ano }} — mês a mês</th>
+                    <th colspan="2">Totais</th>
+                </tr>
+                {% endif %}
                 <tr>
                     <th>Conta</th>
+                    {% for p in periodos_historicos %}<th class="col-historico">{{ p }}</th>{% endfor %}
                     {% for a, m in meses %}<th>{{ meses_abrev[m] }}</th>{% endfor %}
-                    <th>Acumulado</th>
+                    <th>Acum. {{ ano }}</th>
+                    <th>Total geral</th>
                 </tr>
             </thead>
             <tbody>
-                {# ---- Receitas ---- #}
                 <tr class="grupo">
                     <td>Receitas Brutas</td>
-                    {% for a, m in meses %}<td></td>{% endfor %}<td></td>
+                    {% for i in range(n_colunas) %}<td></td>{% endfor %}
                 </tr>
+                {% for cat in receitas %}{{ linha_conta(cat, false) }}{% endfor %}
+                {{ linha_total('= Receitas Brutas Total', 'receita_total', 'subtotal') }}
 
-                {% for cat in receitas %}
-                {% set total_cat = cat.total %}
-                <tr data-conta {{ 'data-zerada' if not total_cat }}>
-                    <td>{{ cat.nome }}{% if cat.codigo %}<span class="cat-code">{{ cat.codigo }}</span>{% endif %}</td>
-                    {% for a, m in meses %}
-                        {% set v = cat.valores.get((a, m), 0) %}
-                        {% if v %}<td>{{ v|moeda }}</td>{% else %}<td class="zero">–</td>{% endif %}
-                    {% endfor %}
-                    {% if total_cat %}<td>{{ total_cat|moeda }}</td>{% else %}<td class="zero">–</td>{% endif %}
-                </tr>
-                {% endfor %}
-
-                <tr class="subtotal">
-                    <td>= Receitas Brutas Total</td>
-                    {% for a, m in meses %}<td>{{ totais[(a, m)]["receita_total"]|moeda }}</td>{% endfor %}
-                    <td>{{ acumulado["receita_total"]|moeda }}</td>
-                </tr>
-
-                {# ---- Custos ---- #}
                 <tr class="grupo">
                     <td>Custos</td>
-                    {% for a, m in meses %}<td></td>{% endfor %}<td></td>
+                    {% for i in range(n_colunas) %}<td></td>{% endfor %}
                 </tr>
+                {% for cat in custos %}{{ linha_conta(cat, true) }}{% endfor %}
+                {{ linha_total('= Custos Total', 'custos_total', 'subtotal', true) }}
 
-                {% for cat in custos %}
-                {% set total_cat = cat.total %}
-                <tr data-conta {{ 'data-zerada' if not total_cat }}>
-                    <td>{{ cat.nome }}{% if cat.codigo %}<span class="cat-code">{{ cat.codigo }}</span>{% endif %}</td>
-                    {% for a, m in meses %}
-                        {% set v = cat.valores.get((a, m), 0) %}
-                        {% if v %}<td class="valor-neg">{{ (-v)|moeda }}</td>{% else %}<td class="zero">–</td>{% endif %}
-                    {% endfor %}
-                    {% if total_cat %}
-                        <td class="valor-neg">{{ (-total_cat)|moeda }}</td>
-                    {% else %}
-                        <td class="zero">–</td>
-                    {% endif %}
-                </tr>
-                {% endfor %}
+                {{ linha_total('= Lucro / Prejuízo Bruto', 'lucro_bruto', 'subtotal') }}
 
-                <tr class="subtotal">
-                    <td>= Custos Total</td>
-                    {% for a, m in meses %}
-                        <td class="valor-neg">{{ (-totais[(a, m)]["custos_total"])|moeda }}</td>
-                    {% endfor %}
-                    <td class="valor-neg">{{ (-acumulado["custos_total"])|moeda }}</td>
-                </tr>
+                {{ linha_total('(-) Impostos s/ Serviços', 'impostos_servicos', 'deducao', true) }}
+                {{ linha_total('(-) IRPJ e CSLL', 'irpj_csll', 'deducao', true) }}
+                {{ linha_total('(-) Desp. Administrativas/Técnico', 'despesa_administrativa', 'deducao', true) }}
+                {{ linha_total('(-) Despesas Financeiras', 'despesa_financeira', 'deducao', true) }}
 
-                {# ---- Resultado bruto e deduções ---- #}
-                <tr class="subtotal">
-                    <td>= Lucro / Prejuízo Bruto</td>
-                    {% for a, m in meses %}
-                        {% set v = totais[(a, m)]["lucro_bruto"] %}
-                        <td class="{{ 'valor-neg' if v < 0 }}">{{ v|moeda }}</td>
-                    {% endfor %}
-                    <td class="{{ 'valor-neg' if acumulado['lucro_bruto'] < 0 }}">{{ acumulado["lucro_bruto"]|moeda }}</td>
-                </tr>
-
-                {% for chave, rotulo in [
-                    ('impostos_servicos', '(-) Impostos s/ Serviços'),
-                    ('irpj_csll', '(-) IRPJ e CSLL'),
-                    ('despesa_administrativa', '(-) Desp. Administrativas/Técnico'),
-                    ('despesa_financeira', '(-) Despesas Financeiras')
-                ] %}
-                <tr class="deducao">
-                    <td>{{ rotulo }}</td>
-                    {% for a, m in meses %}
-                        {% set v = totais[(a, m)][chave] %}
-                        {% if v %}<td class="valor-neg">{{ (-v)|moeda }}</td>{% else %}<td class="zero">–</td>{% endif %}
-                    {% endfor %}
-                    <td class="valor-neg">{{ (-acumulado[chave])|moeda }}</td>
-                </tr>
-                {% endfor %}
-
-                {# ---- Resultado final ---- #}
-                <tr class="resultado">
-                    <td>LUCRO / PREJUÍZO LÍQUIDO</td>
-                    {% for a, m in meses %}
-                        {% set v = totais[(a, m)]["lucro_liquido"] %}
-                        <td class="{{ 'valor-neg' if v < 0 else 'valor-pos' }}">{{ v|moeda }}</td>
-                    {% endfor %}
-                    <td class="{{ 'valor-neg' if acumulado['lucro_liquido'] < 0 else 'valor-pos' }}">
-                        {{ acumulado["lucro_liquido"]|moeda }}
-                    </td>
-                </tr>
+                {{ linha_total('LUCRO / PREJUÍZO LÍQUIDO', 'lucro_liquido', 'resultado') }}
             </tbody>
         </table>
     </div>

@@ -89,8 +89,28 @@ que funciona com o sistema no ar.
 - Totais consolidados (todas as obras)
 - **Editar e excluir** empresas e obras (com proteção: não deixa excluir empresa com obras vinculadas)
 - **Exportar o DRE para Excel** — por obra ou consolidado, formatado, pronto pra enviar por e-mail
-- Períodos históricos agregados da planilha original (ex: "Out a Dez/2025") são importados e
-  mostrados numa seção própria em cada obra, sem se misturar aos meses individuais
+- Períodos agregados da planilha original (ex: "Out a Dez/2025") entram como **colunas do
+  próprio DRE**, na mesma ordem da planilha (ver "Anos antigos" abaixo)
+
+## Anos antigos: como a planilha guarda e como o sistema mostra
+
+Na planilha de origem, **cada obra tem detalhe mês a mês de um ano só** — os anos
+anteriores vêm num bloco agregado por coluna: `Março a Dez/23 | Jan a Dez/24 |
+Jan a Dez/2025 | Janeiro/2026 | ... | Dezembro/2026 | Acumulado`.
+
+Isso tem três consequências que o sistema precisa tratar:
+
+1. **O ano de detalhe varia por obra.** A obra 265 tem 2024; a 277 tem 2025; a 305 tem
+   2026. Treze obras não têm nenhum mês — só blocos anuais. Por isso o seletor de ano é
+   **por obra**, e a tela abre no ano mais recente em que aquela obra tem lançamento.
+2. **Os blocos agregados são colunas do DRE**, à esquerda dos meses, e recebem as mesmas
+   quatro deduções, com a alíquota vigente no fim do período (`dre.fim_do_periodo`
+   converte `"Março a Dez/23"` em `(2023, 12)`).
+3. **Há dois totais**, porque significam coisas diferentes:
+   - `Acum. <ano>` — só o ano selecionado.
+   - `Total geral` — blocos agregados + ano, que é o que a coluna "Acumulado" da
+     planilha mostra. Para a OBRA 251: `Acum. 2026` = R$ 441.557,27 de custo, enquanto
+     `Total geral` = R$ 1.468.419,61 — os dois conferidos contra a planilha.
 
 ## Interface
 
@@ -111,6 +131,34 @@ e **números tabulares** (todo dígito com a mesma largura, para as colunas de v
   das melhores e piores obras por resultado do ano.
 - `static/css/style.css` é a única folha de estilo — nenhum `<style>` solto nos templates.
 - Impressão: `Ctrl+P` em qualquer DRE sai limpo (sem menu nem botões), pronto para PDF.
+
+## Importação do Contimatic (em andamento)
+
+O objetivo é que o DRE passe a ser alimentado e mantido pelos relatórios do Contimatic:
+joga o relatório analítico no sistema e cada obra se atualiza sozinha.
+
+`contimatic.py` está partido em duas camadas de propósito:
+
+| Camada | O que faz | Situação |
+|---|---|---|
+| `ler_relatorio_analitico(caminho)` | Conhece o layout do arquivo e devolve lançamentos normalizados | **Falta o arquivo de exemplo** |
+| `importar_lancamentos(...)` | Resolve conta e centro de custo, soma por competência, atualiza o DRE e guarda o detalhe | Pronto, 19 testes |
+
+Um lançamento normalizado é `{obra_codigo, conta_codigo, conta_nome, data, documento,
+historico, valor}` — o adaptador só precisa produzir isso.
+
+Decisões já embutidas no miolo:
+
+- **O detalhe é guardado** (tabela `partidas`). No DRE, todo valor mensal é clicável e abre
+  os lançamentos que o formaram, com data, documento e histórico, e uma conferência entre a
+  soma dos lançamentos e o valor do DRE.
+- **A conta nunca é adivinhada.** Casa pelo de-para explícito (`contas_map`), depois pelo
+  código do plano de contas, depois pelo nome. O que não casar volta como pendência com
+  quantidade e valor — chutar a conta deslocaria valor entre linhas do DRE em silêncio.
+- **Reimportar o mês substitui**, não soma: o relatório do mês é a verdade, então cada
+  competência tocada é reconstruída do zero. Reimportar sem um lançamento o remove.
+- **As proteções valem igual**: passa pelo mesmo `RegistroImportacao`, então lançamento
+  manual continua protegido e a importação continua podendo ser desfeita.
 
 ## Segurança e integridade dos dados
 

@@ -100,6 +100,56 @@ def criar_tabelas():
         )
     """)
 
+    # Lançamento contábil individual vindo do relatório analítico do Contimatic.
+    # A tabela 'lancamentos' guarda o total de cada célula do DRE; aqui fica o
+    # detalhe que formou esse total, para dar pra clicar num valor e ver de onde
+    # ele veio — que é justamente o que um relatório analítico serve pra responder.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS partidas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            obra_id INTEGER NOT NULL,
+            categoria_id INTEGER NOT NULL,
+            mes INTEGER NOT NULL CHECK (mes BETWEEN 1 AND 12),
+            ano INTEGER NOT NULL,
+            data TEXT,
+            documento TEXT,
+            historico TEXT,
+            conta_codigo TEXT,
+            conta_nome TEXT,
+            valor REAL NOT NULL DEFAULT 0,
+            importacao_id INTEGER,
+            FOREIGN KEY (obra_id) REFERENCES obras(id),
+            FOREIGN KEY (categoria_id) REFERENCES categorias_conta(id),
+            FOREIGN KEY (importacao_id) REFERENCES importacoes(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_partidas_celula
+        ON partidas (obra_id, categoria_id, ano, mes)
+    """)
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_partidas_importacao
+        ON partidas (importacao_id)
+    """)
+
+    # De-para entre a conta contábil do Contimatic e a categoria do plano de
+    # contas. A primeira tentativa é casar pelo código que já está em
+    # categorias_conta; esta tabela cobre os casos em que os códigos divergem,
+    # resolvidos uma vez na tela de revisão e lembrados daí em diante.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS contas_map (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conta_codigo TEXT NOT NULL UNIQUE,
+            conta_nome TEXT,
+            categoria_id INTEGER,
+            ignorar INTEGER NOT NULL DEFAULT 0,
+            criado_em TEXT,
+            FOREIGN KEY (categoria_id) REFERENCES categorias_conta(id)
+        )
+    """)
+
     # Cada importação vira um registro, e cada valor que ela alterou guarda o
     # estado anterior. É o que permite desfazer um arquivo enviado por engano
     # sem restaurar o banco inteiro.

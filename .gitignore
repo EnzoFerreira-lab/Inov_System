@@ -1,0 +1,32 @@
+# Banco de dados — contém a contabilidade real do cliente.
+# Não pode ir para o repositório: o histórico do git guarda o arquivo para
+# sempre, mesmo depois de apagado, e cada commit grava uma cópia inteira.
+# Para backup, use a rotina de cópia do banco (veja o README), não o git.
+database.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Planilhas enviadas e relatórios gerados — também são dados do cliente
+uploads/
+exports/
+*.xlsx
+*.xls
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Configuração local com segredos (INOV_SECRET_KEY etc.)
+.env
+
+# Editores e sistema
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

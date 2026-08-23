@@ -17,10 +17,10 @@ from db import conectar, criar_tabelas
 from dre import (
     calcular_dre_obra,
     calcular_dre_consolidado,
-    buscar_saldos_anteriores,
     CAMPOS_TOTAIS,
 )
 from dre_import import importar_planilha_dre_real, RegistroImportacao, desfazer_importacao
+from contimatic import buscar_partidas
 from dre_export import gerar_excel_dre_obra, gerar_excel_dre_consolidado
 
 app = Flask(__name__)
@@ -192,6 +192,43 @@ def anos_com_dados(cur, ano_atual):
     anos.add(ano_atual)
     anos.add(datetime.date.today().year)
     return sorted(anos)
+
+
+def anos_da_obra(cur, obra_id):
+    """
+    Anos com movimento **desta** obra. O seletor era global, então oferecia
+    2024/2025/2026 para todas — e 27 das 53 obras abriam num ano em que não
+    têm lançamento mensal nenhum, parecendo que o sistema não tinha os dados.
+    """
+    cur.execute(
+        "SELECT DISTINCT ano FROM lancamentos WHERE obra_id = ? AND valor <> 0 ORDER BY ano",
+        (obra_id,),
+    )
+    return [r["ano"] for r in cur.fetchall()]
+
+
+def escolher_ano_da_obra(cur, obra_id, ano_pedido):
+    """
+    Decide qual ano abrir. Sem pedido explícito, usa o ano corrente se a obra
+    tiver dados nele; senão, o ano mais recente que ela tem. Obras antigas
+    (encerradas há anos) abriam num DRE vazio por causa disso.
+    """
+    anos = anos_da_obra(cur, obra_id)
+    ano_corrente = datetime.date.today().year
+
+    if ano_pedido:
+        ano = ano_pedido
+    elif ano_corrente in anos:
+        ano = ano_corrente
+    elif anos:
+        ano = anos[-1]
+    else:
+        ano = ano_corrente
+
+    if ano not in anos:
+        anos = sorted(set(anos) | {ano})
+
+    return ano, anos
 
 
 def listar_empresas(cur):
@@ -655,8 +692,6 @@ def obra_dre(obra_id):
     if redir:
         return redir
 
-    ano = request.args.get("ano", type=int) or datetime.date.today().year
-
     conn = conectar()
     cur = conn.cursor()
     cur.execute("""
@@ -665,16 +700,17 @@ def obra_dre(obra_id):
         WHERE o.id = ?
     """, (obra_id,))
     obra = cur.fetchone()
-    anos = anos_com_dados(cur, ano)
-    conn.close()
 
     if not obra:
+        conn.close()
         flash("Obra não encontrada.", "erro")
         return redirect(url_for("obras"))
 
+    ano, anos = escolher_ano_da_obra(cur, obra_id, request.args.get("ano", type=int))
+    conn.close()
+
     meses = meses_do_ano(ano)
-    resultado = calcular_dre_obra(obra_id, meses)
-    saldos_anteriores = buscar_saldos_anteriores(obra_id)
+    resultado = calcular_dre_obra(obra_id, meses, incluir_historico=True)
 
     return render_template(
         "obra_dre.html",
@@ -686,7 +722,66 @@ def obra_dre(obra_id):
         categorias=resultado["categorias"],
         totais=resultado["totais"],
         acumulado=resultado["acumulado"],
-        saldos_anteriores=saldos_anteriores,
+        periodos_historicos=resultado["periodos_historicos"],
+        totais_historicos=resultado["totais_historicos"],
+        total_geral=resultado["total_geral"],
+    )
+
+
+@app.route("/obras/<int:obra_id>/detalhe")
+def detalhe_da_celula(obra_id):
+    """
+    Os lançamentos contábeis por trás de um valor do DRE. Só tem conteúdo para
+    competências importadas do Contimatic — os valores que vieram da planilha
+    de DRE já chegam somados, sem detalhe por trás.
+    """
+    redir = exigir_login()
+    if redir:
+        return redir
+
+    categoria_id = request.args.get("categoria_id", type=int)
+    mes = request.args.get("mes", type=int)
+    ano = request.args.get("ano", type=int)
+
+    if not (categoria_id and mes and ano):
+        abort(400, "Informe categoria, mês e ano.")
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT o.*, e.nome AS empresa_nome
+        FROM obras o JOIN empresas e ON e.id = o.empresa_id
+        WHERE o.id = ?
+    """, (obra_id,))
+    obra = cur.fetchone()
+
+    cur.execute("SELECT * FROM categorias_conta WHERE id = ?", (categoria_id,))
+    categoria = cur.fetchone()
+
+    if not obra or not categoria:
+        conn.close()
+        flash("Obra ou categoria não encontrada.", "erro")
+        return redirect(url_for("obras"))
+
+    partidas = buscar_partidas(cur, obra_id, categoria_id, ano, mes)
+
+    cur.execute("""
+        SELECT valor, origem FROM lancamentos
+        WHERE obra_id = ? AND categoria_id = ? AND mes = ? AND ano = ?
+    """, (obra_id, categoria_id, mes, ano))
+    lancamento = cur.fetchone()
+    conn.close()
+
+    return render_template(
+        "detalhe_celula.html",
+        obra=obra,
+        categoria=categoria,
+        mes=mes,
+        ano=ano,
+        partidas=partidas,
+        total_partidas=sum(p["valor"] for p in partidas),
+        lancamento=lancamento,
     )
 
 
@@ -696,8 +791,6 @@ def exportar_obra_excel(obra_id):
     if redir:
         return redir
 
-    ano = request.args.get("ano", type=int) or datetime.date.today().year
-
     conn = conectar()
     cur = conn.cursor()
     cur.execute("""
@@ -706,20 +799,24 @@ def exportar_obra_excel(obra_id):
         WHERE o.id = ?
     """, (obra_id,))
     obra = cur.fetchone()
-    conn.close()
 
     if not obra:
+        conn.close()
         flash("Obra não encontrada.", "erro")
         return redirect(url_for("obras"))
 
+    ano, _ = escolher_ano_da_obra(cur, obra_id, request.args.get("ano", type=int))
+    conn.close()
+
     meses = meses_do_ano(ano)
-    resultado = calcular_dre_obra(obra_id, meses)
-    saldos_anteriores = buscar_saldos_anteriores(obra_id)
+    resultado = calcular_dre_obra(obra_id, meses, incluir_historico=True)
 
     buffer = gerar_excel_dre_obra(
         obra, ano, meses, MESES_NOME,
         resultado["categorias"], resultado["totais"], resultado["acumulado"],
-        saldos_anteriores,
+        periodos_historicos=resultado["periodos_historicos"],
+        totais_historicos=resultado["totais_historicos"],
+        total_geral=resultado["total_geral"],
     )
 
     nome_arquivo = f"DRE_{obra['codigo']}_{ano}.xlsx"

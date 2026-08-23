@@ -9,7 +9,9 @@ import unittest
 
 from tests.apoio import BaseComBancoTemporario
 
-from dre import calcular_dre_obra, calcular_dre_consolidado, buscar_taxas_vigentes
+from dre import (
+    calcular_dre_obra, calcular_dre_consolidado, buscar_taxas_vigentes, fim_do_periodo,
+)
 import db
 
 
@@ -201,6 +203,125 @@ class TestConsolidado(BaseComBancoTemporario):
         resultado = calcular_dre_consolidado([], MESES_2026)
         self.assertEqual(resultado["acumulado"]["receita_total"], 0)
         self.assertEqual(resultado["por_obra"], {})
+
+
+class TestPeriodosAgregados(BaseComBancoTemporario):
+    """
+    A planilha traz os anos antigos de cada obra em bloco ("Março a Dez/23"),
+    sem detalhe mensal. Eles entram como colunas do DRE, e não como um anexo
+    à parte — era isso que fazia parecer que o sistema não tinha os anos antigos.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.empresa_id = self.criar_empresa()
+        self.obra_id = self.criar_obra(self.empresa_id)
+        self.zerar_taxas()
+        self.definir_taxa("despesa_administrativa", 10.0, "custo")
+
+    def gravar_periodo(self, periodo, categoria_nome, valor):
+        with self.conectar() as conn:
+            conn.execute(
+                """
+                INSERT INTO saldos_anteriores
+                    (obra_id, categoria_id, periodo_descricao, valor, origem, atualizado_em)
+                VALUES (?, ?, ?, ?, 'importacao', '2026-01-01T00:00:00')
+                """,
+                (self.obra_id, self.id_categoria(categoria_nome), periodo, valor),
+            )
+            conn.commit()
+
+    def test_leitura_do_fim_do_periodo(self):
+        casos = {
+            "Março a Dez/23": (2023, 12),
+            "Jan a Dez/24": (2024, 12),
+            "Jan a Dez/2025": (2025, 12),
+            "Out a Dez/2022": (2022, 12),
+            "Jan a Fev/2022": (2022, 2),
+            "Agos a Dez/2023": (2023, 12),
+            "Julho a Dez/2024": (2024, 12),
+            "Set a Dez/2021": (2021, 12),
+            "coisa nenhuma": None,
+        }
+        for descricao, esperado in casos.items():
+            with self.subTest(descricao=descricao):
+                self.assertEqual(fim_do_periodo(descricao), esperado)
+
+    def test_sem_incluir_historico_o_resultado_do_ano_nao_muda(self):
+        self.lancar(self.obra_id, "Salarios e Ordenados", 1, 2026, 100.0)
+        self.gravar_periodo("Jan a Dez/2024", "Salarios e Ordenados", 5000.0)
+
+        acumulado = calcular_dre_obra(self.obra_id, MESES_2026)["acumulado"]
+        self.assertEqual(acumulado["custos_total"], 100.0)
+
+    def test_periodos_vem_em_ordem_cronologica(self):
+        for periodo in ["Jan a Dez/2024", "Set a Dez/2021", "Out a Dez/2022", "Jan a Dez/2023"]:
+            self.gravar_periodo(periodo, "Salarios e Ordenados", 10.0)
+
+        resultado = calcular_dre_obra(self.obra_id, MESES_2026, incluir_historico=True)
+
+        self.assertEqual(
+            resultado["periodos_historicos"],
+            ["Set a Dez/2021", "Out a Dez/2022", "Jan a Dez/2023", "Jan a Dez/2024"],
+        )
+
+    def test_periodo_agregado_recebe_as_mesmas_deducoes(self):
+        """Igual à planilha: as colunas antigas também têm as 4 deduções."""
+        self.gravar_periodo("Jan a Dez/2024", "Salarios e Ordenados", 1000.0)
+
+        resultado = calcular_dre_obra(self.obra_id, MESES_2026, incluir_historico=True)
+        bloco = resultado["totais_historicos"]["Jan a Dez/2024"]
+
+        self.assertEqual(bloco["custos_total"], 1000.0)
+        self.assertAlmostEqual(bloco["despesa_administrativa"], 100.0, places=6)  # 10% de 1.000
+        self.assertAlmostEqual(bloco["lucro_liquido"], -1100.0, places=6)
+
+    def test_total_geral_soma_historico_mais_o_ano(self):
+        self.lancar(self.obra_id, "Salarios e Ordenados", 1, 2026, 200.0)
+        self.gravar_periodo("Jan a Dez/2024", "Salarios e Ordenados", 1000.0)
+
+        resultado = calcular_dre_obra(self.obra_id, MESES_2026, incluir_historico=True)
+
+        self.assertEqual(resultado["acumulado"]["custos_total"], 200.0)
+        self.assertEqual(resultado["total_geral"]["custos_total"], 1200.0)
+
+    def test_categoria_carrega_os_valores_por_periodo(self):
+        self.gravar_periodo("Jan a Dez/2024", "Salarios e Ordenados", 1000.0)
+        self.gravar_periodo("Jan a Dez/2023", "Salarios e Ordenados", 300.0)
+
+        resultado = calcular_dre_obra(self.obra_id, MESES_2026, incluir_historico=True)
+        salarios = next(c for c in resultado["categorias"] if c["nome"] == "Salarios e Ordenados")
+
+        self.assertEqual(salarios["historicos"]["Jan a Dez/2024"], 1000.0)
+        self.assertEqual(salarios["total_historico"], 1300.0)
+
+    def test_obra_so_com_historico_ainda_mostra_numeros(self):
+        """13 obras reais estão nessa situação: nenhum mês, só blocos anuais."""
+        self.gravar_periodo("Jan a Dez/2023", "Salarios e Ordenados", 800.0)
+
+        resultado = calcular_dre_obra(self.obra_id, MESES_2026, incluir_historico=True)
+
+        self.assertEqual(resultado["acumulado"]["custos_total"], 0)
+        self.assertEqual(resultado["total_geral"]["custos_total"], 800.0)
+        self.assertEqual(len(resultado["periodos_historicos"]), 1)
+
+    def test_periodo_usa_a_taxa_vigente_na_epoca(self):
+        self.zerar_taxas()
+        self.definir_taxa("despesa_administrativa", 10.0, "custo", inicio="2020-01", fim="2023-12")
+        with self.conectar() as conn:
+            conn.execute(
+                """INSERT INTO taxas (chave, descricao, percentual, base_calculo, vigencia_inicio, vigencia_fim)
+                   VALUES ('despesa_administrativa', 'nova', 50.0, 'custo', '2024-01', NULL)"""
+            )
+            conn.commit()
+
+        self.gravar_periodo("Jan a Dez/2023", "Salarios e Ordenados", 1000.0)
+        self.gravar_periodo("Jan a Dez/2024", "Salarios e Ordenados", 1000.0)
+
+        historicos = calcular_dre_obra(self.obra_id, MESES_2026, incluir_historico=True)["totais_historicos"]
+
+        self.assertAlmostEqual(historicos["Jan a Dez/2023"]["despesa_administrativa"], 100.0, places=6)
+        self.assertAlmostEqual(historicos["Jan a Dez/2024"]["despesa_administrativa"], 500.0, places=6)
 
 
 if __name__ == "__main__":

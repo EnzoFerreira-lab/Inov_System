@@ -128,6 +128,57 @@ class TestValoresTravados(BaseDadosReais):
                 )
 
 
+class TestTotalGeralContraAPlanilha(BaseDadosReais):
+    """
+    A coluna "Acumulado" da planilha soma os períodos agregados MAIS os meses —
+    o sistema mostrava só o ano, e era isso que a contabilidade lia como
+    "não puxou os anos antigos". Estes valores foram conferidos célula a
+    célula na aba OBRA 251 do arquivo de Jun/2026.
+    """
+
+    # (linha da planilha, campo, valor da coluna "Acumulado")
+    OBRA_251 = [
+        ("Custos Total", "custos_total", 1468419.61),
+        ("Lucro/Prejuízo Líquido", "lucro_liquido", -1550210.58),
+    ]
+
+    def test_total_geral_da_obra_251_bate_com_a_planilha(self):
+        obra_id = self.obra_por_codigo("251")
+        if obra_id is None:
+            self.skipTest("obra 251 não existe neste banco")
+
+        resultado = calcular_dre_obra(obra_id, MESES_2026, incluir_historico=True)
+
+        for rotulo, campo, esperado in self.OBRA_251:
+            with self.subTest(linha=rotulo):
+                self.assertAlmostEqual(resultado["total_geral"][campo], esperado, places=2)
+
+    def test_total_geral_e_o_ano_mais_os_periodos(self):
+        obra_id = self.obra_por_codigo("251")
+        if obra_id is None:
+            self.skipTest("obra 251 não existe neste banco")
+
+        resultado = calcular_dre_obra(obra_id, MESES_2026, incluir_historico=True)
+
+        for campo in resultado["total_geral"]:
+            with self.subTest(campo=campo):
+                soma = resultado["acumulado"][campo] + sum(
+                    b[campo] for b in resultado["totais_historicos"].values()
+                )
+                self.assertAlmostEqual(resultado["total_geral"][campo], soma, places=6)
+
+    def test_toda_obra_com_periodo_agregado_tem_a_descricao_legivel(self):
+        """Se a descrição não for legível, a taxa da época não pode ser achada."""
+        from dre import fim_do_periodo
+
+        with closing(db.conectar()) as conn:
+            periodos = [r["periodo_descricao"] for r in conn.execute(
+                "SELECT DISTINCT periodo_descricao FROM saldos_anteriores")]
+
+        ilegiveis = [p for p in periodos if fim_do_periodo(p) is None]
+        self.assertEqual(ilegiveis, [], f"períodos que o sistema não sabe datar: {ilegiveis}")
+
+
 class TestInvariantes(BaseDadosReais):
     """Relações que precisam valer para qualquer dado, hoje e depois."""
 

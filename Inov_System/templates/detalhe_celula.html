@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% set ativo = 'obras' %}
+{% from '_icons.html' import icon %}
+
+{% block titulo %}Detalhe do lançamento{% endblock %}
+
+{% block trilha %}
+    <nav class="breadcrumb">
+        <a href="{{ url_for('obras') }}">Obras</a> /
+        <a href="{{ url_for('obra_dre', obra_id=obra['id']) }}?ano={{ ano }}">{{ obra["codigo"] }}</a> /
+        <span>{{ meses_nome[mes] }}/{{ ano }}</span>
+    </nav>
+{% endblock %}
+
+{% block cabecalho %}{{ categoria["nome"] }}{% endblock %}
+{% block descricao %}
+    {{ obra["nome"] }} · {{ meses_nome[mes] }} de {{ ano }}
+    {% if categoria["codigo"] %}· conta {{ categoria["codigo"] }}{% endif %}
+{% endblock %}
+
+{% block acoes %}
+    <a href="{{ url_for('obra_dre', obra_id=obra['id']) }}?ano={{ ano }}" class="btn btn-light">
+        {{ icon('voltar') }} Voltar ao DRE
+    </a>
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="cards-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="card metric-card">
+        <div class="metric-label">Valor no DRE</div>
+        <div class="metric-value">
+            <span class="currency">R$</span>{{ (lancamento["valor"] if lancamento else 0)|moeda }}
+        </div>
+        <span class="metric-foot">
+            {% if lancamento %}
+                origem: {{ 'lançamento manual' if lancamento['origem'] == 'manual' else 'importação' }}
+            {% else %}
+                sem lançamento nesta competência
+            {% endif %}
+        </span>
+    </div>
+    <div class="card metric-card">
+        <div class="metric-label">Soma dos lançamentos</div>
+        <div class="metric-value"><span class="currency">R$</span>{{ total_partidas|moeda }}</div>
+        <span class="metric-foot">{{ partidas|length }} lançamento(s) contábil(is)</span>
+    </div>
+    <div class="card metric-card {{ 'is-liquido' if lancamento and (lancamento['valor'] - total_partidas)|abs < 0.01 }}">
+        <div class="metric-label">Diferença</div>
+        {% set diferenca = (lancamento["valor"] if lancamento else 0) - total_partidas %}
+        <div class="metric-value {{ 'valor-neg' if diferenca|abs >= 0.01 else 'valor-pos' }}">
+            <span class="currency">R$</span>{{ diferenca|moeda }}
+        </div>
+        <span class="metric-foot">
+            {% if diferenca|abs < 0.01 %}
+                o detalhe explica o valor por inteiro
+            {% else %}
+                o valor do DRE não veio (só) destes lançamentos
+            {% endif %}
+        </span>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Lançamentos contábeis</h2>
+            <p>Detalhe vindo do relatório analítico do Contimatic</p>
+        </div>
+        {% if partidas %}
+        <div class="card-header-actions">
+            <label class="search-field">
+                <span class="sr-only">Buscar</span>
+                {{ icon('busca') }}
+                <input class="input input-sm" type="search" data-filter-input
+                       placeholder="Buscar no histórico ou documento…">
+            </label>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if partidas %}
+    <div class="table-wrap">
+        <table class="table" data-filter-table>
+            <thead>
+                <tr>
+                    <th class="shrink">Data</th>
+                    <th class="shrink">Documento</th>
+                    <th>Histórico</th>
+                    <th class="shrink">Conta</th>
+                    <th class="shrink num">Valor</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in partidas %}
+                <tr data-busca="{{ p.historico or '' }} {{ p.documento or '' }} {{ p.conta_nome or '' }}">
+                    <td class="nowrap">{{ p.data|data_br }}</td>
+                    <td class="mono">{{ p.documento or "—" }}</td>
+                    <td>{{ p.historico or "—" }}</td>
+                    <td class="mono">{{ p.conta_codigo or "—" }}</td>
+                    <td class="num">{{ p.valor|moeda }}</td>
+                </tr>
+                {% endfor %}
+                <tr data-filter-empty hidden>
+                    <td colspan="5">
+                        <div class="empty-state">
+                            {{ icon('busca') }}
+                            <h3>Nenhum lançamento encontrado</h3>
+                            <p>Nenhum lançamento corresponde à busca.</p>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="table-legend">
+        <span>Total: R$ {{ total_partidas|moeda }}</span>
+    </div>
+    {% else %}
+        <div class="empty-state">
+            {{ icon('vazio') }}
+            <h3>Sem detalhe para esta competência</h3>
+            <p>
+                O valor do DRE veio da planilha da contabilidade, que já traz os totais somados,
+                ou de um lançamento manual. O detalhe lançamento a lançamento aparece aqui nas
+                competências importadas do relatório analítico do Contimatic.
+            </p>
+            <a class="btn btn-light" href="{{ url_for('obra_dre', obra_id=obra['id']) }}?ano={{ ano }}">
+                Voltar ao DRE
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}

@@ -160,6 +160,90 @@ class TestTelasRenderizam(BaseWeb):
         self.assertIn("60.000,00", todas)
 
 
+class TestAnoDaObra(BaseWeb):
+    """
+    Regressão do relato "algumas obras não estão puxando os anos antigos":
+    o seletor de ano era global e a tela abria sempre no ano corrente, então
+    27 das 53 obras abriam num DRE vazio mesmo tendo dados em outro ano.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.entrar()
+
+    def test_obra_abre_no_ano_mais_recente_que_tem_dados(self):
+        self.lancar(self.obra_id, "Salarios e Ordenados", 3, 2024, 5000.0)
+
+        html = self.cliente.get(f"/obras/{self.obra_id}").get_data(as_text=True)
+
+        self.assertIn('<option value="2024" selected', html)
+        self.assertIn("5.000,00", html)
+
+    def test_seletor_mostra_so_os_anos_da_obra(self):
+        outra = self.criar_obra(self.empresa_id, "888", "OBRA 888")
+        self.lancar(self.obra_id, "Salarios e Ordenados", 1, 2024, 100.0)
+        self.lancar(outra, "Salarios e Ordenados", 1, 2025, 100.0)
+
+        html = self.cliente.get(f"/obras/{self.obra_id}").get_data(as_text=True)
+        anos = re.findall(r'<option value="(\d{4})"', html)
+
+        self.assertIn("2024", anos)
+        self.assertNotIn("2025", anos, "o seletor está oferecendo o ano de outra obra")
+
+    def test_ano_pedido_na_url_e_respeitado(self):
+        self.lancar(self.obra_id, "Salarios e Ordenados", 1, 2024, 100.0)
+
+        html = self.cliente.get(f"/obras/{self.obra_id}?ano=2026").get_data(as_text=True)
+        self.assertIn('<option value="2026" selected', html)
+
+    def test_ano_com_valor_zerado_nao_entra_no_seletor(self):
+        """A planilha traz meses futuros em branco; o importador grava zeros."""
+        self.lancar(self.obra_id, "Salarios e Ordenados", 1, 2024, 100.0)
+        self.lancar(self.obra_id, "Salarios e Ordenados", 12, 2028, 0.0)
+
+        html = self.cliente.get(f"/obras/{self.obra_id}").get_data(as_text=True)
+        self.assertNotIn('<option value="2028"', html)
+
+
+class TestPeriodosNaTela(BaseWeb):
+
+    def setUp(self):
+        super().setUp()
+        self.entrar()
+        with self.conectar() as conn:
+            conn.execute(
+                """
+                INSERT INTO saldos_anteriores
+                    (obra_id, categoria_id, periodo_descricao, valor, origem, atualizado_em)
+                VALUES (?, ?, 'Jan a Dez/2023', 7500.0, 'importacao', '2026-01-01T00:00:00')
+                """,
+                (self.obra_id, self.id_categoria("Salarios e Ordenados")),
+            )
+            conn.commit()
+
+    def test_periodo_antigo_aparece_como_coluna_do_dre(self):
+        html = self.cliente.get(f"/obras/{self.obra_id}").get_data(as_text=True)
+
+        self.assertIn('<th class="col-historico">Jan a Dez/2023</th>', html)
+        self.assertIn("7.500,00", html)
+
+    def test_tela_mostra_a_coluna_de_total_geral(self):
+        html = self.cliente.get(f"/obras/{self.obra_id}").get_data(as_text=True)
+        self.assertIn("Total geral", html)
+
+    def test_exportacao_traz_a_coluna_do_periodo(self):
+        import openpyxl, io
+
+        r = self.cliente.get(f"/obras/{self.obra_id}/exportar")
+        self.assertEqual(r.status_code, 200)
+
+        ws = openpyxl.load_workbook(io.BytesIO(r.data)).active
+        cabecalho = [ws.cell(row=4, column=c).value for c in range(1, 20)]
+
+        self.assertIn("Jan a Dez/2023", cabecalho)
+        self.assertIn("Total geral", cabecalho)
+
+
 class TestFormatacao(unittest.TestCase):
 
     def test_moeda_no_padrao_brasileiro(self):

@@ -896,6 +896,44 @@ table.dre thead th{
     border-bottom: 1px solid var(--border-strong);
 }
 
+/* Faixa que agrupa as colunas: períodos anteriores | meses | totais.
+   Quando ela existe, a linha de baixo gruda logo abaixo dela — o seletor de
+   irmão garante que a segunda linha só desça se a faixa estiver presente. */
+table.dre thead tr.faixa-grupos th{
+    top: 0;
+    z-index: 4;
+    padding-top: 8px;
+    padding-bottom: 4px;
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-3);
+    background: var(--surface-3);
+    border-bottom: 1px solid var(--border);
+}
+
+table.dre thead tr.faixa-grupos ~ tr th{
+    top: 25px;
+}
+
+/* Colunas de período agregado: mesma leitura, origem diferente */
+table.dre th.col-historico,
+table.dre td.col-historico{
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+table.dre thead th.col-historico{
+    color: var(--text-3);
+}
+
+/* "Acum. ano" e "Total geral" — as duas últimas colunas ficam destacadas */
+table.dre th:nth-last-child(2),
+table.dre td:nth-last-child(2){
+    background: var(--surface-2);
+    border-left: 1px solid var(--border);
+}
+
 /* Coluna de categoria fixa na rolagem horizontal */
 table.dre th:first-child,
 table.dre td:first-child{
@@ -996,6 +1034,22 @@ table.dre tr.resultado:hover td{
 /* Zeros ficam discretos para o olho achar o que tem valor */
 table.dre td.zero{
     color: #cbd5e1;
+}
+
+/* Valor mensal que abre o detalhe contábil. Discreto por padrão: numa tela
+   com centenas de números, sublinhar todos viraria ruído. */
+.celula-link{
+    color: inherit;
+    border-bottom: 1px dotted transparent;
+}
+
+table.dre tbody tr:hover .celula-link{
+    border-bottom-color: currentColor;
+}
+
+.celula-link:hover{
+    color: var(--brand-text);
+    border-bottom-style: solid;
 }
 
 .cat-code{
