@@ -1,0 +1,55 @@
+{#
+  Tabela de comparação com o ano anterior. Usada no DRE da obra e nos totais.
+  Espera 'comparativo' (ver montar_comparativo em app.py) e 'ano'.
+#}
+{% from '_icons.html' import icon %}
+
+<div class="card mb-2">
+    <div class="card-header">
+        <div>
+            <h2>{{ ano }} contra {{ comparativo.ano_anterior }}</h2>
+            <p>Comparação do acumulado do ano, como a planilha mostra</p>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Linha</th>
+                    <th class="num">{{ comparativo.ano_anterior }}</th>
+                    <th class="num">{{ ano }}</th>
+                    <th class="num">Diferença</th>
+                    <th class="num shrink">Variação</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in comparativo.linhas %}
+                {% set melhorou = (l.diferenca > 0) == l.subir_e_bom %}
+                <tr>
+                    <td class="primary-cell">{{ l.rotulo }}</td>
+                    <td class="num text-muted">{{ l.anterior|moeda }}</td>
+                    <td class="num">{{ l.atual|moeda }}</td>
+                    <td class="num {{ '' if l.diferenca == 0 else ('valor-pos' if melhorou else 'valor-neg') }}">
+                        {{ '+' if l.diferenca > 0 }}{{ l.diferenca|moeda }}
+                    </td>
+                    <td class="num">
+                        {% if l.percentual is none %}
+                            <span class="text-faint" title="não havia valor em {{ comparativo.ano_anterior }}">—</span>
+                        {% else %}
+                            <span class="delta {{ 'up' if melhorou else 'down' }}">
+                                {{ icon('cima' if l.diferenca > 0 else 'baixo') }}
+                                {{ (l.percentual|abs)|pct }}
+                            </span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-legend">
+        <span>Em custos, a seta verde significa gastar menos</span>
+    </div>
+</div>

@@ -34,7 +34,10 @@ def criar_tabelas():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL,
             email TEXT NOT NULL UNIQUE,
-            senha_hash TEXT NOT NULL
+            senha_hash TEXT NOT NULL,
+            papel TEXT NOT NULL DEFAULT 'comum' CHECK (papel IN ('admin', 'comum')),
+            ativo INTEGER NOT NULL DEFAULT 1,
+            criado_em TEXT
         )
     """)
 
@@ -54,6 +57,7 @@ def criar_tabelas():
             codigo TEXT NOT NULL UNIQUE,
             status TEXT NOT NULL DEFAULT 'em_andamento',
             data_inicio TEXT,
+            aplica_taxas INTEGER NOT NULL DEFAULT 1,
             FOREIGN KEY (empresa_id) REFERENCES empresas(id)
         )
     """)
@@ -208,6 +212,11 @@ def criar_tabelas():
 
     conn.commit()
 
+    _migrar_usuarios(cur)
+    _migrar_obras(cur)
+    _migrar_categorias(cur)
+    conn.commit()
+
     _seed_usuario_admin(cur)
     _seed_plano_de_contas(cur)
     _seed_taxas(cur)
@@ -216,14 +225,99 @@ def criar_tabelas():
     conn.close()
 
 
+def _migrar_usuarios(cur):
+    """
+    Acrescenta papel/ativo/criado_em na tabela de usuários que já existe.
+
+    CREATE TABLE IF NOT EXISTS não altera uma tabela criada antes, então os
+    bancos em uso precisam do ALTER explícito — sem isso o sistema subiria
+    consultando uma coluna inexistente.
+    """
+    colunas = {r["name"] for r in cur.execute("PRAGMA table_info(usuarios)")}
+
+    if "papel" not in colunas:
+        cur.execute("ALTER TABLE usuarios ADD COLUMN papel TEXT NOT NULL DEFAULT 'comum'")
+    if "ativo" not in colunas:
+        cur.execute("ALTER TABLE usuarios ADD COLUMN ativo INTEGER NOT NULL DEFAULT 1")
+    if "criado_em" not in colunas:
+        cur.execute("ALTER TABLE usuarios ADD COLUMN criado_em TEXT")
+
+    # Trava de segurança: um banco sem nenhum admin deixaria todo mundo sem
+    # acesso às ações da dona da empresa, inclusive a de promover alguém.
+    cur.execute("SELECT COUNT(*) AS n FROM usuarios WHERE papel = 'admin' AND ativo = 1")
+    if cur.fetchone()["n"] == 0:
+        cur.execute("SELECT id FROM usuarios ORDER BY id LIMIT 1")
+        primeiro = cur.fetchone()
+        if primeiro:
+            cur.execute("UPDATE usuarios SET papel = 'admin' WHERE id = ?", (primeiro["id"],))
+
+
+def _migrar_obras(cur):
+    """
+    Acrescenta 'aplica_taxas' às obras já cadastradas.
+
+    As 4 taxas do DRE (impostos, IRPJ/CSLL, administrativa e financeira) foram
+    pensadas para uma obra que fatura. O Departamento Técnico é despesa
+    administrativa da própria empresa — cobrar dele uma taxa administrativa
+    calculada sobre o próprio custo administrativo não faz sentido contábil.
+    """
+    colunas = {r["name"] for r in cur.execute("PRAGMA table_info(obras)")}
+
+    if "aplica_taxas" not in colunas:
+        cur.execute("ALTER TABLE obras ADD COLUMN aplica_taxas INTEGER NOT NULL DEFAULT 1")
+        cur.execute("""
+            UPDATE obras SET aplica_taxas = 0
+            WHERE codigo = 'DEPTO-TEC'
+               OR UPPER(nome) LIKE '%DEPARTAMENTO T%'
+               OR UPPER(nome) LIKE '%DEPTO T%'
+        """)
+
+
+def _migrar_categorias(cur):
+    """
+    Marca quais categorias nasceram de uma importação, para a tela de revisão
+    saber o que destacar.
+
+    Como a coluna não existia, a origem das que já estão no banco é deduzida:
+    o que não está no plano de contas padrão veio da planilha.
+    """
+    colunas = {r["name"] for r in cur.execute("PRAGMA table_info(categorias_conta)")}
+    if "origem" in colunas:
+        return
+
+    cur.execute("ALTER TABLE categorias_conta ADD COLUMN origem TEXT NOT NULL DEFAULT 'manual'")
+
+    nomes_padrao = {_chave_de_nome(nome) for _, nome, _ in PLANO_DE_CONTAS_PADRAO}
+    for linha in cur.execute("SELECT id, nome FROM categorias_conta").fetchall():
+        if _chave_de_nome(linha["nome"]) not in nomes_padrao:
+            cur.execute(
+                "UPDATE categorias_conta SET origem = 'importacao' WHERE id = ?", (linha["id"],)
+            )
+
+
+def _chave_de_nome(nome):
+    """Normaliza para comparar nome de conta ignorando acento, caixa e espaço."""
+    import re
+    import unicodedata
+
+    nfkd = unicodedata.normalize("NFKD", str(nome))
+    sem_acento = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", sem_acento).strip().lower()
+
+
 def _seed_usuario_admin(cur):
+    from datetime import datetime as _dt
     from werkzeug.security import generate_password_hash
 
     cur.execute("SELECT id FROM usuarios WHERE email = ?", ("admin@inov.com",))
     if not cur.fetchone():
         cur.execute(
-            "INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)",
-            ("Administrador", "admin@inov.com", generate_password_hash("1234")),
+            """
+            INSERT INTO usuarios (nome, email, senha_hash, papel, ativo, criado_em)
+            VALUES (?, ?, ?, 'admin', 1, ?)
+            """,
+            ("Administrador", "admin@inov.com", generate_password_hash("1234"),
+             _dt.now().isoformat()),
         )
 
 

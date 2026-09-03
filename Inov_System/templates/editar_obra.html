@@ -66,6 +66,22 @@
                     <label for="ed-inicio">Data de início</label>
                     <input class="input" id="ed-inicio" type="date" name="data_inicio" value="{{ obra['data_inicio'] or '' }}">
                 </div>
+
+                <div class="full">
+                    <div class="form-group">
+                        <label class="row" style="cursor:pointer; align-items:flex-start;">
+                            <input type="checkbox" name="aplica_taxas" value="1" style="margin-top:3px;"
+                                   {{ 'checked' if obra['aplica_taxas'] }}>
+                            <span>
+                                Aplicar as 4 taxas do DRE (impostos, IRPJ/CSLL, administrativa e financeira)
+                                <span class="helper-text" style="display:block; font-weight:400;">
+                                    Desmarque para centros de custo que não faturam, como o Departamento
+                                    Técnico — nesses casos as taxas não fazem sentido contábil e ficam zeradas.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
             </div>
 
             <div class="form-actions">
@@ -76,6 +92,7 @@
     </div>
 </div>
 
+{% if eh_admin %}
 <div class="card narrow danger-zone">
     <div>
         <h3>Zona de risco</h3>
@@ -90,5 +107,6 @@
         </form>
     </div>
 </div>
+{% endif %}
 
 {% endblock %}

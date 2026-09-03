@@ -70,6 +70,8 @@
     </div>
 </div>
 
+{% if comparativo %}{% include '_comparativo.html' %}{% endif %}
+
 {% set receitas = categorias|selectattr('tipo', 'equalto', 'receita')|list %}
 {% set custos = categorias|selectattr('tipo', 'equalto', 'custo')|list %}
 {% set zeradas = categorias|rejectattr('total')|list %}
@@ -199,7 +201,11 @@
 
     <div class="table-legend">
         <span>{{ receitas|length }} conta(s) de receita · {{ custos|length }} de custo</span>
-        <span>Deduções calculadas pelas taxas vigentes em cada mês</span>
+        {% if obra["aplica_taxas"] %}
+            <span>Deduções calculadas pelas taxas vigentes em cada mês</span>
+        {% else %}
+            <span>Centro de custo sem faturamento — as 4 taxas do DRE não se aplicam</span>
+        {% endif %}
     </div>
 </div>
 

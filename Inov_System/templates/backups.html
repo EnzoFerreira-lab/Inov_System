@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% set ativo = 'backups' %}
+{% from '_icons.html' import icon %}
+
+{% block titulo %}Backup{% endblock %}
+{% block cabecalho %}Backup do banco{% endblock %}
+{% block descricao %}
+    O sistema gera uma cópia por dia automaticamente, no primeiro acesso.
+    Aqui você pode gerar uma cópia na hora e baixar qualquer uma delas.
+{% endblock %}
+
+{% block acoes %}
+    <form method="POST">
+        {{ campo_csrf() }}
+        <button class="btn btn-primary" type="submit">{{ icon('novo') }} Gerar cópia agora</button>
+    </form>
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="card mb-2">
+    <div class="card-section">
+        <div class="callout">
+            {{ icon('alerta') }}
+            <div>
+                As cópias ficam <strong>na mesma máquina</strong> que o banco. Isso protege contra
+                erro de operação e corrupção do arquivo, mas não contra perda do computador.
+                Baixe uma cópia de tempos em tempos e guarde fora daqui.
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Cópias disponíveis</h2>
+            <p>{{ copias|length }} cópia(s) · as 20 mais recentes são mantidas, as anteriores saem sozinhas</p>
+        </div>
+    </div>
+
+    {% if copias %}
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th class="shrink">Quando</th>
+                    <th>Arquivo</th>
+                    <th class="shrink">Tipo</th>
+                    <th class="shrink num">Tamanho</th>
+                    <th class="shrink"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in copias %}
+                <tr>
+                    <td class="nowrap">{{ c.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+                    <td class="mono">{{ c.nome }}</td>
+                    <td>
+                        <span class="badge {{ 'primary' if '_diario' in c.nome else 'neutral' }}">
+                            {{ 'Automática' if '_diario' in c.nome else 'Manual' }}
+                        </span>
+                    </td>
+                    <td class="num text-muted">{{ (c.bytes / 1024 / 1024)|round(1) }} MB</td>
+                    <td>
+                        <div class="row-actions">
+                            <a class="btn btn-light btn-sm"
+                               href="{{ url_for('baixar_backup', nome=c.nome) }}">
+                                {{ icon('exportar') }} Baixar
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-legend">
+        <span>Para restaurar: pare o sistema, troque o database.db pela cópia e suba de novo</span>
+    </div>
+    {% else %}
+        <div class="empty-state">
+            {{ icon('vazio') }}
+            <h3>Nenhuma cópia ainda</h3>
+            <p>A primeira cópia automática sai no próximo início do sistema. Ou gere uma agora.</p>
+            <form method="POST">
+                {{ campo_csrf() }}
+                <button class="btn btn-primary" type="submit">Gerar cópia agora</button>
+            </form>
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}

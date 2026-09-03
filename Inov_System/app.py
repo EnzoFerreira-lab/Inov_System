@@ -21,6 +21,7 @@ from dre import (
 )
 from dre_import import importar_planilha_dre_real, RegistroImportacao, desfazer_importacao
 from contimatic import buscar_partidas
+import backup
 from dre_export import gerar_excel_dre_obra, gerar_excel_dre_consolidado
 
 app = Flask(__name__)
@@ -194,6 +195,39 @@ def anos_com_dados(cur, ano_atual):
     return sorted(anos)
 
 
+# ---------------------------------------------------------------------------
+# Permissões
+#
+# O corte não é por obra: todo funcionário enxerga e opera todas as obras —
+# importa, exporta, lança e atualiza. O que fica reservado à dona da empresa
+# são as ações que destroem dado ou mudam a regra do jogo para todo mundo:
+# excluir empresa ou obra, alterar as taxas do DRE e administrar usuários.
+# ---------------------------------------------------------------------------
+
+def usuario_eh_admin():
+    return session.get("usuario_papel") == "admin"
+
+
+def exigir_admin():
+    """Usar depois de exigir_login(). Devolve resposta de bloqueio ou None."""
+    if not usuario_logado():
+        return redirect(url_for("login"))
+    if not usuario_eh_admin():
+        flash(
+            "Essa ação é restrita à administradora do sistema. "
+            "Peça para ela, ou solicite que seu usuário seja promovido.",
+            "erro",
+        )
+        return redirect(url_for("dashboard"))
+    return None
+
+
+@app.context_processor
+def injetar_permissoes():
+    """Deixa 'eh_admin' disponível em todo template, para esconder o que não pode."""
+    return {"eh_admin": usuario_eh_admin()}
+
+
 def anos_da_obra(cur, obra_id):
     """
     Anos com movimento **desta** obra. O seletor era global, então oferecia
@@ -229,6 +263,39 @@ def escolher_ano_da_obra(cur, obra_id, ano_pedido):
         anos = sorted(set(anos) | {ano})
 
     return ano, anos
+
+
+def montar_comparativo(atual, anterior, ano_anterior):
+    """
+    Variação de cada linha do DRE contra o ano anterior, como a planilha mostra.
+
+    A variação percentual é omitida quando o ano anterior foi zero: dividir por
+    zero não dá "aumento de 100%", dá uma informação que não existe. Nesses
+    casos a tela mostra só o valor absoluto.
+    """
+    linhas = []
+    for campo, rotulo in [
+        ("receita_total", "Receita Bruta"),
+        ("custos_total", "Custos"),
+        ("lucro_bruto", "Lucro Bruto"),
+        ("lucro_liquido", "Lucro Líquido"),
+    ]:
+        valor_atual = atual.get(campo, 0) or 0
+        valor_anterior = anterior.get(campo, 0) or 0
+        diferenca = valor_atual - valor_anterior
+
+        linhas.append({
+            "campo": campo,
+            "rotulo": rotulo,
+            "atual": valor_atual,
+            "anterior": valor_anterior,
+            "diferenca": diferenca,
+            "percentual": (diferenca / abs(valor_anterior) * 100) if valor_anterior else None,
+            # Em custo, subir é ruim; nas demais linhas, subir é bom.
+            "subir_e_bom": campo != "custos_total",
+        })
+
+    return {"ano_anterior": ano_anterior, "linhas": linhas}
 
 
 def listar_empresas(cur):
@@ -267,6 +334,15 @@ def preparar_ambiente():
     """
     criar_pastas()
     criar_tabelas()
+
+    # Uma cópia por dia, no primeiro acesso do dia. Não derruba o sistema se
+    # falhar: ficar sem backup é ruim, mas não subir é pior.
+    try:
+        destino = backup.backup_diario()
+        if destino:
+            app.logger.info("Backup diário do banco gerado em %s", destino)
+    except Exception:
+        app.logger.exception("Não foi possível gerar o backup diário do banco")
 
 
 preparar_ambiente()
@@ -354,8 +430,20 @@ def login():
         conn.close()
 
         if usuario and check_password_hash(usuario["senha_hash"], senha or ""):
+            if not usuario["ativo"]:
+                flash("Esse acesso foi desativado. Fale com a administradora.", "erro")
+                return render_template("login.html")
+
+            # Recria a sessão no login: evita que um identificador de sessão
+            # obtido antes da autenticação continue valendo depois dela.
+            token = session.get("_csrf")
+            session.clear()
+            if token:
+                session["_csrf"] = token
+
             session["usuario_id"] = usuario["id"]
             session["usuario_nome"] = usuario["nome"]
+            session["usuario_papel"] = usuario["papel"]
             return redirect(url_for("dashboard"))
 
         flash("E-mail ou senha inválidos.", "erro")
@@ -367,6 +455,217 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/minha-conta", methods=["GET", "POST"])
+def minha_conta():
+    redir = exigir_login()
+    if redir:
+        return redir
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    if request.method == "POST":
+        atual = request.form.get("senha_atual") or ""
+        nova = request.form.get("senha_nova") or ""
+        confirmacao = request.form.get("senha_confirmacao") or ""
+
+        cur.execute("SELECT senha_hash FROM usuarios WHERE id = ?", (session["usuario_id"],))
+        usuario = cur.fetchone()
+
+        if not usuario or not check_password_hash(usuario["senha_hash"], atual):
+            flash("A senha atual está incorreta.", "erro")
+        elif len(nova) < 6:
+            flash("A nova senha precisa ter pelo menos 6 caracteres.", "erro")
+        elif nova != confirmacao:
+            flash("A confirmação não confere com a nova senha.", "erro")
+        else:
+            cur.execute(
+                "UPDATE usuarios SET senha_hash = ? WHERE id = ?",
+                (generate_password_hash(nova), session["usuario_id"]),
+            )
+            conn.commit()
+            flash("Senha alterada com sucesso.", "sucesso")
+
+    cur.execute("SELECT * FROM usuarios WHERE id = ?", (session["usuario_id"],))
+    usuario = cur.fetchone()
+    conn.close()
+
+    return render_template("minha_conta.html", usuario=usuario)
+
+
+# ---------------------------------------------------------------------------
+# Usuários (só a administradora)
+# ---------------------------------------------------------------------------
+
+@app.route("/usuarios", methods=["GET", "POST"])
+def usuarios():
+    redir = exigir_admin()
+    if redir:
+        return redir
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    if request.method == "POST":
+        nome = (request.form.get("nome") or "").strip()
+        email = (request.form.get("email") or "").strip().lower()
+        senha = request.form.get("senha") or ""
+        papel = request.form.get("papel") if request.form.get("papel") in ("admin", "comum") else "comum"
+
+        if not (nome and email and senha):
+            flash("Preencha nome, e-mail e senha.", "erro")
+        elif len(senha) < 6:
+            flash("A senha precisa ter pelo menos 6 caracteres.", "erro")
+        else:
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO usuarios (nome, email, senha_hash, papel, ativo, criado_em)
+                    VALUES (?, ?, ?, ?, 1, ?)
+                    """,
+                    (nome, email, generate_password_hash(senha), papel,
+                     datetime.datetime.now().isoformat()),
+                )
+                conn.commit()
+                flash(f"Usuário {nome} cadastrado.", "sucesso")
+            except Exception as e:
+                erro_ao_salvar("Já existe um usuário com esse e-mail.", e)
+
+    cur.execute("SELECT * FROM usuarios ORDER BY ativo DESC, nome")
+    lista = cur.fetchall()
+    conn.close()
+
+    return render_template("usuarios.html", usuarios=lista)
+
+
+@app.route("/usuarios/<int:usuario_id>/papel", methods=["POST"])
+def alterar_papel_usuario(usuario_id):
+    redir = exigir_admin()
+    if redir:
+        return redir
+
+    papel = request.form.get("papel")
+    if papel not in ("admin", "comum"):
+        flash("Papel inválido.", "erro")
+        return redirect(url_for("usuarios"))
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    if papel == "comum" and _ficaria_sem_admin(cur, usuario_id):
+        conn.close()
+        flash("Não dá para rebaixar o último administrador — o sistema ficaria sem quem administra.", "erro")
+        return redirect(url_for("usuarios"))
+
+    cur.execute("UPDATE usuarios SET papel = ? WHERE id = ?", (papel, usuario_id))
+    conn.commit()
+    conn.close()
+
+    # Se a própria pessoa mudou o próprio papel, a sessão precisa acompanhar.
+    if usuario_id == session.get("usuario_id"):
+        session["usuario_papel"] = papel
+
+    flash("Papel atualizado.", "sucesso")
+    return redirect(url_for("usuarios"))
+
+
+@app.route("/usuarios/<int:usuario_id>/alternar-acesso", methods=["POST"])
+def alternar_acesso_usuario(usuario_id):
+    redir = exigir_admin()
+    if redir:
+        return redir
+
+    if usuario_id == session.get("usuario_id"):
+        flash("Você não pode desativar o próprio acesso.", "erro")
+        return redirect(url_for("usuarios"))
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    cur.execute("SELECT ativo FROM usuarios WHERE id = ?", (usuario_id,))
+    usuario = cur.fetchone()
+
+    if usuario and usuario["ativo"] and _ficaria_sem_admin(cur, usuario_id):
+        conn.close()
+        flash("Não dá para desativar o último administrador.", "erro")
+        return redirect(url_for("usuarios"))
+
+    cur.execute("UPDATE usuarios SET ativo = 1 - ativo WHERE id = ?", (usuario_id,))
+    conn.commit()
+    conn.close()
+
+    flash("Acesso atualizado.", "sucesso")
+    return redirect(url_for("usuarios"))
+
+
+@app.route("/usuarios/<int:usuario_id>/senha", methods=["POST"])
+def redefinir_senha_usuario(usuario_id):
+    redir = exigir_admin()
+    if redir:
+        return redir
+
+    senha = request.form.get("senha") or ""
+    if len(senha) < 6:
+        flash("A senha precisa ter pelo menos 6 caracteres.", "erro")
+        return redirect(url_for("usuarios"))
+
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE usuarios SET senha_hash = ? WHERE id = ?",
+        (generate_password_hash(senha), usuario_id),
+    )
+    conn.commit()
+    conn.close()
+
+    flash("Senha redefinida. Peça para a pessoa trocá-la no primeiro acesso.", "sucesso")
+    return redirect(url_for("usuarios"))
+
+
+@app.route("/backups", methods=["GET", "POST"])
+def backups():
+    redir = exigir_admin()
+    if redir:
+        return redir
+
+    if request.method == "POST":
+        try:
+            destino = backup.gerar_backup(motivo="manual")
+            flash(f"Backup gerado: {os.path.basename(destino)}", "sucesso")
+        except Exception:
+            app.logger.exception("Falha ao gerar backup")
+            flash("Não foi possível gerar o backup. Veja o log do servidor.", "erro")
+        return redirect(url_for("backups"))
+
+    return render_template("backups.html", copias=backup.listar_backups())
+
+
+@app.route("/backups/<nome>/baixar")
+def baixar_backup(nome):
+    redir = exigir_admin()
+    if redir:
+        return redir
+
+    # secure_filename impede que o nome escape da pasta de backups
+    # (algo como "../../database.db").
+    seguro = secure_filename(nome)
+    caminho = os.path.join(backup.PASTA_BACKUPS, seguro)
+
+    if not seguro.endswith(".db") or not os.path.isfile(caminho):
+        abort(404)
+
+    return send_file(caminho, as_attachment=True, download_name=seguro)
+
+
+def _ficaria_sem_admin(cur, usuario_id):
+    """True se mexer nesse usuário deixaria o sistema sem nenhum admin ativo."""
+    cur.execute(
+        "SELECT COUNT(*) AS n FROM usuarios WHERE papel = 'admin' AND ativo = 1 AND id <> ?",
+        (usuario_id,),
+    )
+    return cur.fetchone()["n"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -553,7 +852,7 @@ def editar_empresa(empresa_id):
 
 @app.route("/empresas/<int:empresa_id>/excluir", methods=["POST"])
 def excluir_empresa(empresa_id):
-    redir = exigir_login()
+    redir = exigir_admin()
     if redir:
         return redir
 
@@ -639,12 +938,15 @@ def editar_obra(obra_id):
         status = request.form.get("status") or "em_andamento"
         data_inicio = request.form.get("data_inicio") or None
 
+        aplica_taxas = 1 if request.form.get("aplica_taxas") == "1" else 0
+
         if nome and codigo and empresa_id:
             try:
                 cur.execute("""
-                    UPDATE obras SET nome = ?, codigo = ?, empresa_id = ?, status = ?, data_inicio = ?
+                    UPDATE obras SET nome = ?, codigo = ?, empresa_id = ?, status = ?,
+                                     data_inicio = ?, aplica_taxas = ?
                     WHERE id = ?
-                """, (nome, codigo, empresa_id, status, data_inicio, obra_id))
+                """, (nome, codigo, empresa_id, status, data_inicio, aplica_taxas, obra_id))
                 conn.commit()
                 flash("Obra atualizada com sucesso.", "sucesso")
                 conn.close()
@@ -669,7 +971,7 @@ def editar_obra(obra_id):
 
 @app.route("/obras/<int:obra_id>/excluir", methods=["POST"])
 def excluir_obra(obra_id):
-    redir = exigir_login()
+    redir = exigir_admin()
     if redir:
         return redir
 
@@ -712,11 +1014,19 @@ def obra_dre(obra_id):
     meses = meses_do_ano(ano)
     resultado = calcular_dre_obra(obra_id, meses, incluir_historico=True)
 
+    # Comparação com o ano anterior — só faz sentido se aquele ano existir de
+    # fato para esta obra; senão a variação seria sempre "+100%" contra zero.
+    comparativo = None
+    if (ano - 1) in anos:
+        anterior = calcular_dre_obra(obra_id, meses_do_ano(ano - 1))["acumulado"]
+        comparativo = montar_comparativo(resultado["acumulado"], anterior, ano - 1)
+
     return render_template(
         "obra_dre.html",
         obra=obra,
         ano=ano,
         anos=anos,
+        comparativo=comparativo,
         meses=meses,
         meses_nome=MESES_NOME,
         categorias=resultado["categorias"],
@@ -851,10 +1161,16 @@ def totais():
     meses = meses_do_ano(ano)
     resultado = calcular_dre_consolidado(obra_ids, meses)
 
+    comparativo = None
+    if (ano - 1) in anos and obra_ids:
+        anterior = calcular_dre_consolidado(obra_ids, meses_do_ano(ano - 1))["acumulado"]
+        comparativo = montar_comparativo(resultado["acumulado"], anterior, ano - 1)
+
     return render_template(
         "totais.html",
         ano=ano,
         anos=anos,
+        comparativo=comparativo,
         empresas=empresas_lista,
         empresa_id=empresa_id,
         total_obras=len(obra_ids),
@@ -932,11 +1248,227 @@ def categorias():
         else:
             flash("Informe nome e tipo (receita ou custo).", "erro")
 
-    cur.execute("SELECT * FROM categorias_conta ORDER BY tipo DESC, ordem")
-    lista = cur.fetchall()
+    # Uso real de cada conta: a tela de revisão precisa mostrar o que pode ser
+    # mexido sem risco (conta zerada) e o que já carrega histórico.
+    cur.execute("""
+        SELECT c.*,
+               (SELECT COUNT(*) FROM lancamentos l
+                 WHERE l.categoria_id = c.id AND l.valor <> 0) AS usos,
+               (SELECT COUNT(*) FROM saldos_anteriores s
+                 WHERE s.categoria_id = c.id) AS usos_historicos
+        FROM categorias_conta c
+        ORDER BY c.tipo DESC, c.ordem
+    """)
+    lista = [dict(r) for r in cur.fetchall()]
     conn.close()
 
-    return render_template("categorias.html", categorias=lista)
+    return render_template(
+        "categorias.html",
+        categorias=lista,
+        duplicatas=_sugerir_duplicatas(lista),
+    )
+
+
+def _sugerir_duplicatas(categorias, limiar=0.82):
+    """
+    Aponta pares de nomes muito parecidos, do mesmo tipo.
+
+    A importação reconhece variações de acento e caixa, mas não abreviação:
+    "Seguro Riscos Execução de Serv. Trab." e "Seguro Riscos Execução de
+    Serviços" entram como duas contas e dividem o valor entre duas linhas do DRE.
+    """
+    import difflib
+
+    def chave(nome):
+        return re.sub(r"\s+", " ", _sem_acentos(nome)).strip().lower()
+
+    pares = []
+    for i, a in enumerate(categorias):
+        for b in categorias[i + 1:]:
+            if a["tipo"] != b["tipo"]:
+                continue
+            semelhanca = difflib.SequenceMatcher(None, chave(a["nome"]), chave(b["nome"])).ratio()
+            if semelhanca >= limiar:
+                # Sugere manter a que já tem histórico.
+                manter, mesclar = (a, b) if (a["usos"] or 0) >= (b["usos"] or 0) else (b, a)
+                pares.append({"manter": manter, "mesclar": mesclar, "semelhanca": semelhanca})
+
+    return sorted(pares, key=lambda p: -p["semelhanca"])
+
+
+def _sem_acentos(texto):
+    import unicodedata
+
+    nfkd = unicodedata.normalize("NFKD", str(texto or ""))
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
+@app.route("/categorias/<int:categoria_id>/editar", methods=["POST"])
+def editar_categoria(categoria_id):
+    redir = exigir_login()
+    if redir:
+        return redir
+
+    nome = (request.form.get("nome") or "").strip()
+    codigo = (request.form.get("codigo") or "").strip() or None
+    tipo = request.form.get("tipo")
+
+    if not nome or tipo not in ("receita", "custo"):
+        flash("Informe nome e tipo (receita ou custo).", "erro")
+        return redirect(url_for("categorias"))
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    # Trocar o tipo de uma conta que já tem lançamento move dinheiro de receita
+    # para custo (ou o contrário) em todo o histórico, em todas as obras.
+    cur.execute("SELECT tipo FROM categorias_conta WHERE id = ?", (categoria_id,))
+    atual = cur.fetchone()
+    if atual and atual["tipo"] != tipo:
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM lancamentos WHERE categoria_id = ? AND valor <> 0",
+            (categoria_id,),
+        )
+        if cur.fetchone()["n"] and not usuario_eh_admin():
+            conn.close()
+            flash(
+                "Trocar receita/custo de uma conta que já tem lançamento altera o DRE de "
+                "todas as obras — só a administradora pode fazer isso.",
+                "erro",
+            )
+            return redirect(url_for("categorias"))
+
+    try:
+        cur.execute(
+            "UPDATE categorias_conta SET nome = ?, codigo = ?, tipo = ?, origem = 'manual' WHERE id = ?",
+            (nome, codigo, tipo, categoria_id),
+        )
+        conn.commit()
+        flash("Categoria atualizada.", "sucesso")
+    except Exception as e:
+        erro_ao_salvar("Já existe outra categoria com esse nome.", e)
+
+    conn.close()
+    return redirect(url_for("categorias"))
+
+
+@app.route("/categorias/mesclar", methods=["POST"])
+def mesclar_categorias():
+    """
+    Junta duas contas numa só: todo o histórico da origem passa para o destino
+    e a origem é removida. Não tem desfazer, por isso é da administradora.
+    """
+    redir = exigir_admin()
+    if redir:
+        return redir
+
+    origem_id = request.form.get("origem_id", type=int)
+    destino_id = request.form.get("destino_id", type=int)
+
+    if not origem_id or not destino_id or origem_id == destino_id:
+        flash("Escolha duas categorias diferentes para mesclar.", "erro")
+        return redirect(url_for("categorias"))
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id, nome, tipo FROM categorias_conta WHERE id IN (?, ?)", (origem_id, destino_id))
+    encontradas = {r["id"]: r for r in cur.fetchall()}
+
+    if len(encontradas) != 2:
+        conn.close()
+        flash("Categoria não encontrada.", "erro")
+        return redirect(url_for("categorias"))
+
+    origem, destino = encontradas[origem_id], encontradas[destino_id]
+
+    if origem["tipo"] != destino["tipo"]:
+        conn.close()
+        flash("Não dá para mesclar uma receita com um custo.", "erro")
+        return redirect(url_for("categorias"))
+
+    try:
+        movidos = _mesclar_categoria(cur, origem_id, destino_id)
+        cur.execute("DELETE FROM categorias_conta WHERE id = ?", (origem_id,))
+        conn.commit()
+        flash(
+            f'"{origem["nome"]}" foi mesclada em "{destino["nome"]}". '
+            f'{movidos} valor(es) passaram para a conta de destino.',
+            "sucesso",
+        )
+    except Exception:
+        conn.rollback()
+        app.logger.exception("Falha ao mesclar categorias")
+        flash("Erro ao mesclar. Nada foi alterado.", "erro")
+
+    conn.close()
+    return redirect(url_for("categorias"))
+
+
+def _mesclar_categoria(cur, origem_id, destino_id):
+    """
+    Move lançamentos, períodos históricos e partidas da origem para o destino.
+
+    Onde o destino já tem valor na mesma competência, os dois são somados — sem
+    isso a restrição de unicidade barraria a mesclagem e o valor da origem se
+    perderia em silêncio.
+    """
+    movidos = 0
+
+    # Lançamentos mensais
+    cur.execute("SELECT * FROM lancamentos WHERE categoria_id = ?", (origem_id,))
+    for linha in cur.fetchall():
+        cur.execute(
+            """
+            SELECT id, valor FROM lancamentos
+            WHERE obra_id = ? AND categoria_id = ? AND mes = ? AND ano = ?
+            """,
+            (linha["obra_id"], destino_id, linha["mes"], linha["ano"]),
+        )
+        existente = cur.fetchone()
+
+        if existente:
+            cur.execute(
+                "UPDATE lancamentos SET valor = ? WHERE id = ?",
+                (existente["valor"] + linha["valor"], existente["id"]),
+            )
+            cur.execute("DELETE FROM lancamentos WHERE id = ?", (linha["id"],))
+        else:
+            cur.execute(
+                "UPDATE lancamentos SET categoria_id = ? WHERE id = ?", (destino_id, linha["id"])
+            )
+        movidos += 1
+
+    # Períodos históricos agregados
+    cur.execute("SELECT * FROM saldos_anteriores WHERE categoria_id = ?", (origem_id,))
+    for linha in cur.fetchall():
+        cur.execute(
+            """
+            SELECT id, valor FROM saldos_anteriores
+            WHERE obra_id = ? AND categoria_id = ? AND periodo_descricao = ?
+            """,
+            (linha["obra_id"], destino_id, linha["periodo_descricao"]),
+        )
+        existente = cur.fetchone()
+
+        if existente:
+            cur.execute(
+                "UPDATE saldos_anteriores SET valor = ? WHERE id = ?",
+                (existente["valor"] + linha["valor"], existente["id"]),
+            )
+            cur.execute("DELETE FROM saldos_anteriores WHERE id = ?", (linha["id"],))
+        else:
+            cur.execute(
+                "UPDATE saldos_anteriores SET categoria_id = ? WHERE id = ?",
+                (destino_id, linha["id"]),
+            )
+        movidos += 1
+
+    # Detalhe contábil (Contimatic) e o de-para de contas
+    cur.execute("UPDATE partidas SET categoria_id = ? WHERE categoria_id = ?", (destino_id, origem_id))
+    cur.execute("UPDATE contas_map SET categoria_id = ? WHERE categoria_id = ?", (destino_id, origem_id))
+
+    return movidos
 
 
 # POST, não GET: era a única rota que alterava dado por GET. Um link assim é
@@ -969,9 +1501,17 @@ def alternar_status_categoria(categoria_id):
 
 @app.route("/taxas", methods=["GET", "POST"])
 def taxas():
+    # Consultar as taxas é livre — todo mundo precisa saber com que alíquota o
+    # DRE foi calculado. Criar uma vigência nova é da dona: muda o resultado de
+    # todas as obras de uma vez.
     redir = exigir_login()
     if redir:
         return redir
+
+    if request.method == "POST":
+        bloqueio = exigir_admin()
+        if bloqueio:
+            return bloqueio
 
     conn = conectar()
     cur = conn.cursor()

@@ -92,14 +92,18 @@ def buscar_taxas_vigentes(cur, ano, mes):
     return taxas
 
 
-def montar_bloco(cur, receita_total, custos_total, ano, mes):
+def montar_bloco(cur, receita_total, custos_total, ano, mes, aplica_taxas=True):
     """
     Monta a coluna do DRE para um par (receita, custo), aplicando as taxas
     vigentes na competência informada. Serve tanto para um mês quanto para um
     período agregado — na planilha, as colunas antigas ('Março a Dez/23')
     recebem as mesmas deduções, com as mesmas alíquotas.
+
+    Com aplica_taxas=False as quatro deduções ficam zeradas: é o caso do
+    Departamento Técnico, que é despesa administrativa da própria empresa e não
+    uma obra que fatura.
     """
-    taxas = buscar_taxas_vigentes(cur, ano, mes)
+    taxas = buscar_taxas_vigentes(cur, ano, mes) if aplica_taxas else {}
 
     def aplicar(chave_taxa):
         taxa = taxas.get(chave_taxa)
@@ -156,6 +160,10 @@ def calcular_dre_obra(obra_id, meses, incluir_historico=False):
 
     meses_pedidos = set(meses)
 
+    cur.execute("SELECT aplica_taxas FROM obras WHERE id = ?", (obra_id,))
+    linha_obra = cur.fetchone()
+    aplica_taxas = bool(linha_obra["aplica_taxas"]) if linha_obra else True
+
     cur.execute("""
         SELECT id, codigo, nome, tipo, ordem
         FROM categorias_conta
@@ -199,7 +207,7 @@ def calcular_dre_obra(obra_id, meses, incluir_historico=False):
         custos_total = sum(
             valores_mes.get(c["id"], 0) for c in categorias if c["tipo"] == "custo"
         )
-        totais[chave] = montar_bloco(cur, receita_total, custos_total, ano, mes)
+        totais[chave] = montar_bloco(cur, receita_total, custos_total, ano, mes, aplica_taxas)
 
     acumulado = somar_blocos(totais.values())
 
@@ -238,7 +246,9 @@ def calcular_dre_obra(obra_id, meses, incluir_historico=False):
             custos_total = sum(valores.get(c["id"], 0) for c in categorias if c["tipo"] == "custo")
 
             ano_ref, mes_ref = fim_do_periodo(periodo) or referencia
-            totais_historicos[periodo] = montar_bloco(cur, receita_total, custos_total, ano_ref, mes_ref)
+            totais_historicos[periodo] = montar_bloco(
+                cur, receita_total, custos_total, ano_ref, mes_ref, aplica_taxas
+            )
 
         for c in categorias:
             c["total_historico"] = sum(c["historicos"].values())

@@ -253,6 +253,12 @@ input[type="text"].money-input{
     gap: 10px;
     padding: 8px 10px;
     margin-bottom: 4px;
+    border-radius: var(--r);
+    transition: background 0.12s;
+}
+
+a.user-box:hover{
+    background: var(--side-hover);
 }
 
 .user-avatar{
@@ -519,6 +525,11 @@ input[type="text"].money-input{
 
 .delta.up{ color: var(--pos); }
 .delta.down{ color: var(--neg); }
+
+.delta svg{
+    width: 13px;
+    height: 13px;
+}
 
 /* --------------------------------------------------------------------------
    9. Botões

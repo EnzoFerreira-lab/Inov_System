@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+{% set ativo = 'usuarios' %}
+{% from '_icons.html' import icon %}
+
+{% block titulo %}Usuários{% endblock %}
+{% block cabecalho %}Usuários{% endblock %}
+{% block descricao %}
+    Todo funcionário vê as obras, lança, importa e exporta. As ações que apagam dado
+    ou mudam o cálculo de todas as obras ficam com a administradora.
+{% endblock %}
+
+{% block acoes %}
+    <button class="btn btn-primary" onclick="openModal('modalUsuario')">{{ icon('novo') }} Novo usuário</button>
+{% endblock %}
+
+{% block conteudo %}
+
+<div class="card mb-2">
+    <div class="card-section">
+        <div class="callout">
+            {{ icon('cadeado') }}
+            <div>
+                <strong>Só a administradora pode:</strong> excluir empresa, excluir obra,
+                alterar as taxas do DRE e administrar estes usuários.
+                <br>
+                <strong>Todo funcionário pode:</strong> ver o DRE de todas as obras, lançar
+                valores, importar planilha, desfazer importação e exportar para Excel.
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Contas de acesso</h2>
+            <p>{{ usuarios|length }} usuário(s)</p>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>E-mail</th>
+                    <th class="shrink">Papel</th>
+                    <th class="shrink">Acesso</th>
+                    <th class="shrink"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in usuarios %}
+                <tr>
+                    <td class="primary-cell {{ 'text-faint' if not u['ativo'] }}">
+                        {{ u["nome"] }}
+                        {% if u["id"] == session["usuario_id"] %}<span class="cat-code">você</span>{% endif %}
+                    </td>
+                    <td class="text-muted">{{ u["email"] }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('alterar_papel_usuario', usuario_id=u['id']) }}">
+                            {{ campo_csrf() }}
+                            <select class="select input-sm" name="papel" onchange="this.form.submit()"
+                                    aria-label="Papel de {{ u['nome'] }}">
+                                <option value="comum" {{ 'selected' if u['papel'] == 'comum' }}>Funcionário</option>
+                                <option value="admin" {{ 'selected' if u['papel'] == 'admin' }}>Administradora</option>
+                            </select>
+                        </form>
+                    </td>
+                    <td>
+                        <span class="badge {{ 'success' if u['ativo'] else 'warning' }}">
+                            {{ 'Ativo' if u['ativo'] else 'Desativado' }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="row-actions">
+                            <button class="btn btn-light btn-sm" type="button"
+                                    onclick="abrirRedefinicao({{ u['id'] }}, '{{ u['nome']|replace("'", "") }}')">
+                                Trocar senha
+                            </button>
+                            {% if u["id"] != session["usuario_id"] %}
+                            <form method="POST" action="{{ url_for('alternar_acesso_usuario', usuario_id=u['id']) }}"
+                                  onsubmit="return confirm('{{ 'Reativar' if not u['ativo'] else 'Desativar' }} o acesso de {{ u['nome'] }}?');">
+                                {{ campo_csrf() }}
+                                <button class="btn btn-light btn-sm" type="submit">
+                                    {{ 'Reativar' if not u['ativo'] else 'Desativar' }}
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-legend">
+        <span>Desativar preserva o histórico — o acesso apenas deixa de funcionar</span>
+        <span>O sistema não deixa ficar sem nenhuma administradora ativa</span>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<div class="modal" id="modalUsuario">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Novo usuário</h3>
+            <button class="close-btn" onclick="closeModal('modalUsuario')" aria-label="Fechar">✕</button>
+        </div>
+
+        <form method="POST">
+            {{ campo_csrf() }}
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="full">
+                        <div class="form-group">
+                            <label for="u-nome">Nome</label>
+                            <input class="input" id="u-nome" type="text" name="nome" required>
+                        </div>
+                    </div>
+                    <div class="full">
+                        <div class="form-group">
+                            <label for="u-email">E-mail</label>
+                            <input class="input" id="u-email" type="email" name="email" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="u-senha">Senha provisória</label>
+                        <input class="input" id="u-senha" type="text" name="senha" minlength="6" required>
+                        <div class="helper-text">Mínimo 6 caracteres. A pessoa troca depois em "Minha conta".</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="u-papel">Papel</label>
+                        <select class="select" id="u-papel" name="papel">
+                            <option value="comum">Funcionário</option>
+                            <option value="admin">Administradora</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-light" type="button" onclick="closeModal('modalUsuario')">Cancelar</button>
+                <button class="btn btn-primary" type="submit">Criar usuário</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="modalSenha">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Redefinir senha de <span id="senhaNome"></span></h3>
+            <button class="close-btn" onclick="closeModal('modalSenha')" aria-label="Fechar">✕</button>
+        </div>
+
+        <form method="POST" id="formSenha">
+            {{ campo_csrf() }}
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="s-senha">Nova senha</label>
+                    <input class="input" id="s-senha" type="text" name="senha" minlength="6" required>
+                    <div class="helper-text">
+                        Combine a senha com a pessoa e peça para ela trocar no primeiro acesso.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-light" type="button" onclick="closeModal('modalSenha')">Cancelar</button>
+                <button class="btn btn-primary" type="submit">Redefinir</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function abrirRedefinicao(usuarioId, nome) {
+        document.getElementById('senhaNome').textContent = nome;
+        document.getElementById('formSenha').action = '/usuarios/' + usuarioId + '/senha';
+        openModal('modalSenha');
+    }
+</script>
+{% endblock %}

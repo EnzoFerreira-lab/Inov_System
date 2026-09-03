@@ -54,11 +54,17 @@ funciona igual servido por WSGI (gunicorn/waitress), não só por `python app.py
 python -m unittest discover -s tests -t .
 ```
 
-51 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
+128 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
 
 - **`test_calculo_dre.py`** — a matemática do DRE com números conferíveis de cabeça,
-  incluindo a vigência das taxas (reajustar hoje não pode alterar mês já fechado).
+  incluindo a vigência das taxas (reajustar hoje não pode alterar mês já fechado) e os
+  períodos agregados.
 - **`test_importacao.py`** — preservação de lançamento manual e o desfazer.
+- **`test_contimatic.py`** — o miolo da importação contábil (resolver conta, somar por
+  competência, guardar o detalhe), sem depender do arquivo.
+- **`test_permissoes.py`** — o que o funcionário pode e o que é da administradora.
+- **`test_ajustes.py`** — Depto Técnico sem taxas, comparativo anual, mesclagem de
+  categorias e backup.
 - **`test_web.py`** — login, CSRF, todas as telas, exportações e formatação BR.
 - **`test_regressao_dados_reais.py`** — trava os números validados de 2026 contra o
   `database.db`. É pulado automaticamente onde o banco não existe. Se uma importação
@@ -68,9 +74,24 @@ python -m unittest discover -s tests -t .
 ### Backup
 
 O `database.db` **não** é versionado no git — ele guarda a contabilidade real do cliente,
-e o histórico do git manteria uma cópia para sempre, mesmo depois de apagada. Para backup,
-copie o arquivo (com o sistema parado) ou use `sqlite3 database.db ".backup copia.db"`,
-que funciona com o sistema no ar.
+e o histórico do git manteria uma cópia para sempre, mesmo depois de apagada.
+
+O sistema gera **uma cópia por dia**, automaticamente, no primeiro acesso do dia
+(`backup.backup_diario`, chamado na inicialização). As 20 mais recentes ficam em
+`backups/`; as anteriores saem sozinhas. A administradora vê a lista em **Backup**, gera
+uma cópia na hora e baixa qualquer uma.
+
+A cópia usa a API de backup do SQLite, não `shutil.copy`: ela sai consistente mesmo se
+alguém estiver gravando no meio.
+
+```bash
+python -m backup            # gera uma cópia agora
+python -m backup --listar   # mostra as cópias existentes
+```
+
+**As cópias ficam na mesma máquina que o banco.** Isso protege contra erro de operação e
+corrupção do arquivo, não contra perda do computador — baixe uma cópia de tempos em tempos
+e guarde fora dali. Para restaurar: pare o sistema, troque o `database.db` pela cópia e suba.
 
 ## O que já existe nesta versão
 
@@ -183,17 +204,60 @@ Decisões já embutidas no miolo:
 - **Erros reais vão para o log.** Antes, qualquer falha ao salvar virava a mesma mensagem
   sobre CNPJ duplicado, escondendo o problema de verdade.
 
+## Usuários e permissões
+
+O corte é **por ação, não por obra**: todo funcionário enxerga e opera todas as obras.
+O que fica reservado à administradora são as ações que apagam dado ou mudam a regra do
+jogo para todo mundo.
+
+| Ação | Funcionário | Administradora |
+|---|:---:|:---:|
+| Ver DRE, totais e dashboard | ✓ | ✓ |
+| Lançar valores | ✓ | ✓ |
+| Importar planilha e desfazer importação | ✓ | ✓ |
+| Exportar para Excel | ✓ | ✓ |
+| Cadastrar e editar empresa e obra | ✓ | ✓ |
+| Criar, editar, ativar e desativar categoria | ✓ | ✓ |
+| Consultar as taxas | ✓ | ✓ |
+| **Excluir empresa ou obra** | — | ✓ |
+| **Criar vigência de taxa** | — | ✓ |
+| **Mesclar duas categorias** | — | ✓ |
+| **Trocar receita/custo de conta já usada** | — | ✓ |
+| **Administrar usuários e backup** | — | ✓ |
+
+Cada um troca a própria senha em "Minha conta". A administradora cria usuários, redefine
+senha, promove e desativa acesso — desativar preserva o histórico. O sistema não permite
+ficar sem nenhuma administradora ativa, nem que alguém desative o próprio acesso.
+
+A tabela `usuarios` ganhou `papel`, `ativo` e `criado_em` por migração (`_migrar_usuarios`),
+que também promove o usuário mais antigo se o banco não tiver nenhum admin — sem isso, um
+banco antigo subiria com todo mundo trancado do lado de fora.
+
+## Departamento Técnico
+
+Obras têm o campo `aplica_taxas`. As 4 taxas do DRE foram pensadas para uma obra que
+fatura; o Departamento Técnico é despesa administrativa da própria empresa, e cobrar dele
+uma taxa administrativa calculada sobre o próprio custo administrativo não faz sentido.
+Ele entra com `aplica_taxas = 0` — na importação e por migração — e o DRE dele sai com as
+quatro deduções zeradas. A tela de editar obra permite marcar outros centros de custo assim.
+
+## Revisão do plano de contas
+
+A tela de Plano de Contas destaca as categorias **criadas automaticamente na importação**
+(coluna `origem`), mostra quantos lançamentos cada conta tem e permite editar nome, código
+e tipo.
+
+Ela também aponta **contas com nomes muito parecidos**. A importação reconhece diferença de
+acento e caixa, mas não de abreviação: "Seguro Riscos Execução de Serv. Trab." e "Seguro
+Riscos Execução de Serviços" entram como duas contas e dividem o valor em duas linhas do
+DRE. Mesclar move lançamentos, períodos históricos, partidas e o de-para para a conta
+mantida, somando onde a competência coincide — sem isso a restrição de unicidade barraria
+a operação e o valor se perderia em silêncio. Não tem desfazer, por isso é da administradora.
+
 ## Próximos passos sugeridos
 
-- Login com permissão por usuário (ex: um usuário só vê certas obras)
-- Comparação automática com o ano anterior (como a planilha já mostra)
-- Tela para revisar/corrigir categorias criadas automaticamente na importação
-  (hoje elas entram como "custo" ou "receita" conforme a seção da planilha, mas
-  o código/nome pode precisar de ajuste manual ocasional)
-- Nota sobre o Departamento Técnico: hoje ele é importado como se fosse uma "obra" pra não
-  perder o dado, mas as 4 taxas (impostos, IRPJ/CSLL etc.) não fazem sentido pra despesa
-  administrativa da empresa — vale revisar esse cálculo quando essa aba começar a ter dados
-  reais preenchidos (hoje está toda zerada no arquivo de exemplo)
+- **Leitor do relatório do Contimatic** — só falta o adaptador do arquivo (ver acima)
+- Limpeza da pasta `uploads/`, que hoje guarda todo arquivo importado para sempre
 
 ## Estrutura
 

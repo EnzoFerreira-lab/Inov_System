@@ -39,16 +39,25 @@
         <a href="{{ url_for('taxas') }}" class="nav-link {{ 'active' if ativo == 'taxas' }}">
             {{ icon('taxas') }} Taxas e Impostos
         </a>
+        {% if eh_admin %}
+        <a href="{{ url_for('usuarios') }}" class="nav-link {{ 'active' if ativo == 'usuarios' }}">
+            {{ icon('usuarios') }} Usuários
+        </a>
+        <a href="{{ url_for('backups') }}" class="nav-link {{ 'active' if ativo == 'backups' }}">
+            {{ icon('backup') }} Backup
+        </a>
+        {% endif %}
     </nav>
 
     <div class="sidebar-footer">
-        <div class="user-box">
+        <a class="user-box" href="{{ url_for('minha_conta') }}"
+           title="Minha conta e troca de senha">
             <div class="user-avatar">{{ (session['usuario_nome'] or '?')[0]|upper }}</div>
             <div class="grow">
                 <strong>{{ session['usuario_nome'] }}</strong>
-                <span>Administrador</span>
+                <span>{{ 'Administradora' if eh_admin else 'Funcionário' }}</span>
             </div>
-        </div>
+        </a>
         <a class="logout-link" href="{{ url_for('logout') }}">{{ icon('sair') }} Sair do sistema</a>
     </div>
 </aside>

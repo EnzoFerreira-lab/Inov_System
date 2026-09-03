@@ -15,8 +15,9 @@
 {% set receitas = categorias|selectattr('tipo', 'equalto', 'receita')|list %}
 {% set custos = categorias|selectattr('tipo', 'equalto', 'custo')|list %}
 {% set inativas = categorias|rejectattr('ativo')|list %}
+{% set importadas = categorias|selectattr('origem', 'equalto', 'importacao')|list %}
 
-<div class="cards-grid" style="grid-template-columns: repeat(3, 1fr);">
+<div class="cards-grid">
     <div class="card metric-card is-receita">
         <div class="metric-label">Contas de receita</div>
         <div class="metric-value">{{ receitas|length }}</div>
@@ -26,10 +27,68 @@
         <div class="metric-value">{{ custos|length }}</div>
     </div>
     <div class="card metric-card">
+        <div class="metric-label">Criadas na importação</div>
+        <div class="metric-value {{ 'text-faint' if not importadas }}">{{ importadas|length }}</div>
+        <span class="metric-foot">merecem uma conferida</span>
+    </div>
+    <div class="card metric-card">
         <div class="metric-label">Inativas</div>
         <div class="metric-value {{ 'text-faint' if not inativas }}">{{ inativas|length }}</div>
     </div>
 </div>
+
+{% if duplicatas %}
+<div class="card mb-2">
+    <div class="card-header">
+        <div>
+            <h2>Contas parecidas</h2>
+            <p>A importação reconhece diferença de acento e caixa, mas não de abreviação.
+               Quando a mesma conta entra com dois nomes, o valor fica dividido em duas
+               linhas do DRE. Confira se são de fato a mesma coisa antes de juntar.</p>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Manter</th>
+                    <th>Juntar nesta</th>
+                    <th class="shrink num">Semelhança</th>
+                    <th class="shrink"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in duplicatas %}
+                <tr>
+                    <td class="primary-cell">
+                        {{ d.manter.nome }}
+                        <span class="sub">{{ d.manter.usos }} lançamento(s) · código {{ d.manter.codigo or '—' }}</span>
+                    </td>
+                    <td>
+                        {{ d.mesclar.nome }}
+                        <span class="sub">{{ d.mesclar.usos }} lançamento(s) · código {{ d.mesclar.codigo or '—' }}</span>
+                    </td>
+                    <td class="num text-muted">{{ (d.semelhanca * 100)|round|int }}%</td>
+                    <td>
+                        {% if eh_admin %}
+                        <form method="POST" action="{{ url_for('mesclar_categorias') }}"
+                              onsubmit="return confirm('Juntar &quot;{{ d.mesclar.nome }}&quot; em &quot;{{ d.manter.nome }}&quot;? Todo o histórico passa para a conta mantida e a outra é removida. Não tem como desfazer.');">
+                            {{ campo_csrf() }}
+                            <input type="hidden" name="origem_id" value="{{ d.mesclar.id }}">
+                            <input type="hidden" name="destino_id" value="{{ d.manter.id }}">
+                            <button class="btn btn-light btn-sm" type="submit">Juntar</button>
+                        </form>
+                        {% else %}
+                        <span class="text-faint text-sm nowrap">só a administradora</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 
 <div class="card">
     <div class="card-header">
@@ -57,6 +116,12 @@
                 <option value="0">Só inativas</option>
             </select>
 
+            <select class="select input-sm" data-filter-select="origem" aria-label="Filtrar por origem">
+                <option value="">Qualquer origem</option>
+                <option value="importacao">Criadas na importação</option>
+                <option value="manual">Cadastradas à mão</option>
+            </select>
+
             <span class="filter-count"><span data-filter-count>{{ categorias|length }}</span> de {{ categorias|length }}</span>
         </div>
     </div>
@@ -68,6 +133,7 @@
                     <th class="shrink">Código</th>
                     <th>Nome</th>
                     <th class="shrink">Tipo</th>
+                    <th class="shrink num">Uso</th>
                     <th class="shrink">Status</th>
                     <th class="shrink"></th>
                 </tr>
@@ -76,13 +142,23 @@
                 {% for cat in categorias %}
                 <tr data-busca="{{ cat['codigo'] or '' }} {{ cat['nome'] }}"
                     data-tipo="{{ cat['tipo'] }}"
-                    data-ativo="{{ cat['ativo'] }}">
-                    <td class="mono">{{ cat["codigo"] or "—" }}</td>
-                    <td class="primary-cell {{ 'text-faint' if not cat['ativo'] }}">{{ cat["nome"] }}</td>
+                    data-ativo="{{ cat['ativo'] }}"
+                    data-origem="{{ cat['origem'] }}">
+                    <td class="mono {{ 'text-faint' if not cat['codigo'] }}">{{ cat["codigo"] or "sem código" }}</td>
+                    <td class="primary-cell {{ 'text-faint' if not cat['ativo'] }}">
+                        {{ cat["nome"] }}
+                        {% if cat["origem"] == "importacao" %}
+                            <span class="badge warning" style="margin-left:6px;">criada na importação</span>
+                        {% endif %}
+                    </td>
                     <td>
                         <span class="badge {{ 'success' if cat['tipo'] == 'receita' else 'neutral' }}">
                             {{ 'Receita' if cat['tipo'] == 'receita' else 'Custo' }}
                         </span>
+                    </td>
+                    <td class="num {{ 'text-faint' if not cat['usos'] }}">
+                        {{ cat["usos"] }}
+                        {% if cat["usos_historicos"] %}<span class="sub">+{{ cat["usos_historicos"] }} hist.</span>{% endif %}
                     </td>
                     <td>
                         <span class="badge {{ 'primary' if cat['ativo'] else 'warning' }}">
@@ -91,6 +167,10 @@
                     </td>
                     <td>
                         <div class="row-actions">
+                            <button class="btn btn-light btn-sm" type="button"
+                                    onclick="editarCategoria({{ cat['id'] }}, {{ cat['nome']|tojson }}, {{ (cat['codigo'] or '')|tojson }}, {{ cat['tipo']|tojson }}, {{ cat['usos'] }})">
+                                Editar
+                            </button>
                             {# Formulário, não link: ativar/desativar altera dado e
                                por isso precisa de POST com token. #}
                             <form method="POST"
@@ -105,7 +185,7 @@
                 </tr>
                 {% endfor %}
                 <tr data-filter-empty hidden>
-                    <td colspan="5">
+                    <td colspan="6">
                         <div class="empty-state">
                             {{ icon('busca') }}
                             <h3>Nenhuma categoria encontrada</h3>
@@ -169,4 +249,66 @@
         </form>
     </div>
 </div>
+
+<div class="modal" id="modalEditar">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Revisar categoria</h3>
+            <button class="close-btn" onclick="closeModal('modalEditar')" aria-label="Fechar">✕</button>
+        </div>
+
+        <form method="POST" id="formEditar">
+            {{ campo_csrf() }}
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="full">
+                        <div class="form-group">
+                            <label for="e-nome">Nome</label>
+                            <input class="input" id="e-nome" type="text" name="nome" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="e-codigo">Código</label>
+                        <input class="input" id="e-codigo" type="text" name="codigo" placeholder="ex: 320">
+                        <div class="helper-text">Preencher ajuda a importação a reconhecer a conta.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="e-tipo">Tipo</label>
+                        <select class="select" id="e-tipo" name="tipo" required>
+                            <option value="custo">Custo</option>
+                            <option value="receita">Receita</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="callout mt-2" id="avisoUso" hidden>
+                    {{ icon('alerta') }}
+                    <div>
+                        Esta conta tem <strong id="avisoQtd"></strong> lançamento(s). Trocar entre
+                        receita e custo move esse valor de lado no DRE de <strong>todas as obras</strong>.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-light" type="button" onclick="closeModal('modalEditar')">Cancelar</button>
+                <button class="btn btn-primary" type="submit">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function editarCategoria(id, nome, codigo, tipo, usos) {
+        document.getElementById('formEditar').action = '/categorias/' + id + '/editar';
+        document.getElementById('e-nome').value = nome;
+        document.getElementById('e-codigo').value = codigo;
+        document.getElementById('e-tipo').value = tipo;
+
+        const aviso = document.getElementById('avisoUso');
+        aviso.hidden = !usos;
+        document.getElementById('avisoQtd').textContent = usos;
+
+        openModal('modalEditar');
+    }
+</script>
 {% endblock %}

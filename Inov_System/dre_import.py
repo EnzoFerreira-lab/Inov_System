@@ -203,7 +203,10 @@ def _obter_ou_criar_categoria(cur, cache, codigo, nome, tipo):
     cur.execute("SELECT COALESCE(MAX(ordem), 0) + 1 AS prox FROM categorias_conta")
     ordem = cur.fetchone()["prox"]
     cur.execute(
-        "INSERT INTO categorias_conta (codigo, nome, tipo, ordem, ativo) VALUES (?, ?, ?, ?, 1)",
+        """
+        INSERT INTO categorias_conta (codigo, nome, tipo, ordem, ativo, origem)
+        VALUES (?, ?, ?, ?, 1, 'importacao')
+        """,
         (codigo, nome, tipo, ordem),
     )
     novo_id = cur.lastrowid
@@ -413,6 +416,8 @@ def importar_depto_tecnico(ws, cur, empresa_id_padrao, cache_categorias, resumo,
 
     obra_id, criada = _obter_ou_criar_obra(cur, empresa_id_padrao, "DEPTO-TEC", "Departamento Técnico (Administrativo)", "em_andamento")
     if criada:
+        # Não é uma obra que fatura: as 4 taxas do DRE não se aplicam a ela.
+        cur.execute("UPDATE obras SET aplica_taxas = 0 WHERE id = ?", (obra_id,))
         resumo["obras_criadas"].append("DEPTO-TEC - Departamento Técnico (Administrativo)")
 
     linhas_receita, _ = _linhas_de_categoria(ws, receitas_row, col_rotulo=2)
