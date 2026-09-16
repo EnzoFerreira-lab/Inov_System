@@ -120,6 +120,7 @@ def criar_tabelas():
             historico TEXT,
             conta_codigo TEXT,
             conta_nome TEXT,
+            secao TEXT,
             valor REAL NOT NULL DEFAULT 0,
             importacao_id INTEGER,
             FOREIGN KEY (obra_id) REFERENCES obras(id),
@@ -215,6 +216,7 @@ def criar_tabelas():
     _migrar_usuarios(cur)
     _migrar_obras(cur)
     _migrar_categorias(cur)
+    _migrar_partidas(cur)
     conn.commit()
 
     _seed_usuario_admin(cur)
@@ -271,6 +273,20 @@ def _migrar_obras(cur):
                OR UPPER(nome) LIKE '%DEPARTAMENTO T%'
                OR UPPER(nome) LIKE '%DEPTO T%'
         """)
+
+
+def _migrar_partidas(cur):
+    """
+    Acrescenta 'secao' às partidas.
+
+    O relatório do Contimatic separa Receitas Brutas, Deduções, Custos e
+    Despesas Administrativas. Guardar de qual seção o valor veio permite
+    conferir depois de onde saiu cada número, e é o que a tela de revisão usa
+    para avisar sobre dupla contagem.
+    """
+    colunas = {r["name"] for r in cur.execute("PRAGMA table_info(partidas)")}
+    if "secao" not in colunas:
+        cur.execute("ALTER TABLE partidas ADD COLUMN secao TEXT")
 
 
 def _migrar_categorias(cur):

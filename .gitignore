@@ -8,9 +8,10 @@ database.db
 *.db-wal
 *.db-shm
 
-# Planilhas enviadas e relatórios gerados — também são dados do cliente
+# Planilhas enviadas, relatórios e cópias do banco — dados do cliente
 uploads/
 exports/
+backups/
 *.xlsx
 *.xls
 

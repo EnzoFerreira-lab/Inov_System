@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+{% set ativo = 'contas_contimatic' %}
+{% from '_icons.html' import icon %}
+
+{% block titulo %}Contas do Contimatic{% endblock %}
+{% block cabecalho %}Contas do Contimatic{% endblock %}
+{% block descricao %}
+    De-para entre a conta contábil do relatório e a categoria do plano de contas.
+    O sistema guarda cada decisão e não pergunta de novo.
+{% endblock %}
+
+{% block acoes %}
+    <a href="{{ url_for('importar_dados') }}" class="btn btn-light">{{ icon('voltar') }} Importar</a>
+    <a href="{{ url_for('categorias') }}" class="btn btn-light">{{ icon('categorias') }} Plano de contas</a>
+{% endblock %}
+
+{% block conteudo %}
+
+{% if pendentes %}
+<div class="card mb-2">
+    <div class="card-section">
+        <div class="callout" style="border-left-color: var(--neg);">
+            {{ icon('alerta') }}
+            <div>
+                <strong>{{ pendentes|length }} conta(s) ainda sem destino.</strong>
+                Enquanto estiverem assim, os valores delas <strong>não entram no DRE</strong> —
+                é de propósito: chutar a categoria deslocaria dinheiro entre linhas sem dar erro.
+                Depois de resolver, reimporte o relatório para os valores entrarem.
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Contas vistas nos relatórios</h2>
+            <p>{{ contas|length }} conta(s) · {{ pendentes|length }} aguardando decisão</p>
+        </div>
+    </div>
+
+    {% if contas %}
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th class="shrink">Código</th>
+                    <th>Conta no Contimatic</th>
+                    <th>Vai para</th>
+                    <th class="shrink"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in contas %}
+                {% set pendente = not c.categoria_id and not c.ignorar %}
+                <tr>
+                    <td class="mono {{ 'text-faint' if c.conta_codigo.startswith('nome:') }}">
+                        {{ 'sem código' if c.conta_codigo.startswith('nome:') else c.conta_codigo }}
+                    </td>
+                    <td class="primary-cell">
+                        {{ c.conta_nome or "—" }}
+                        {% if pendente %}
+                            <span class="badge danger" style="margin-left:6px;">sem destino</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if c.ignorar %}
+                            <span class="badge neutral">Ignorada de propósito</span>
+                        {% elif c.categoria_id %}
+                            <span class="badge success">{{ c.categoria_nome }}</span>
+                            <span class="sub">{{ 'receita' if c.categoria_tipo == 'receita' else 'custo' }}</span>
+                        {% else %}
+                            <form method="POST" action="{{ url_for('definir_conta_contimatic', conta_id=c.id) }}"
+                                  class="row" style="gap:6px;">
+                                {{ campo_csrf() }}
+                                <select class="select input-sm" name="categoria_id" style="min-width:230px;">
+                                    <option value="">Escolha a categoria…</option>
+                                    {% for cat in categorias %}
+                                        <option value="{{ cat.id }}"
+                                            {{ 'selected' if c.sugestao and c.sugestao.categoria_id == cat.id }}>
+                                            {{ cat.nome }}{% if cat.codigo %} ({{ cat.codigo }}){% endif %}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <button class="btn btn-primary btn-sm" type="submit" name="acao" value="mapear">
+                                    Salvar
+                                </button>
+                                <button class="btn btn-light btn-sm" type="submit" name="acao" value="ignorar"
+                                        title="A conta não entra no DRE e o sistema para de perguntar">
+                                    Ignorar
+                                </button>
+                            </form>
+                            {% if c.sugestao %}
+                                <span class="sub">
+                                    sugestão: {{ c.sugestao.categoria_nome }}
+                                    ({{ (c.sugestao.semelhanca * 100)|round|int }}% parecido) — confira antes de salvar
+                                </span>
+                            {% else %}
+                                <span class="sub">nenhuma categoria parecida; talvez precise criar uma nova</span>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if c.categoria_id or c.ignorar %}
+                        <form method="POST" action="{{ url_for('definir_conta_contimatic', conta_id=c.id) }}">
+                            {{ campo_csrf() }}
+                            <input type="hidden" name="acao" value="reabrir">
+                            <button class="btn btn-light btn-sm" type="submit">Trocar</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-legend">
+        <span><strong>Ignorar</strong> serve para conta que não deve entrar no DRE do sistema</span>
+        <span>A decisão vale para todas as obras e para as próximas importações</span>
+    </div>
+    {% else %}
+        <div class="empty-state">
+            {{ icon('vazio') }}
+            <h3>Nenhuma conta registrada ainda</h3>
+            <p>As contas aparecem aqui depois da primeira importação de um relatório do Contimatic.</p>
+            <a class="btn btn-primary" href="{{ url_for('importar_dados') }}">Ir para Importar</a>
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}

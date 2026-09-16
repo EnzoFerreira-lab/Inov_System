@@ -28,6 +28,9 @@
         <a href="{{ url_for('importar_dados') }}" class="nav-link {{ 'active' if ativo == 'importar' }}">
             {{ icon('importar') }} Importar Planilha
         </a>
+        <a href="{{ url_for('contas_contimatic') }}" class="nav-link {{ 'active' if ativo == 'contas_contimatic' }}">
+            {{ icon('categorias') }} Contas do Contimatic
+        </a>
 
         <div class="nav-section">Configuração</div>
         <a href="{{ url_for('empresas') }}" class="nav-link {{ 'active' if ativo == 'empresas' }}">

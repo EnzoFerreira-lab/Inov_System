@@ -25,6 +25,29 @@
                 <div class="helper-text" style="margin-top:12px;">Formatos aceitos: .xlsx e .xls</div>
             </div>
 
+            <div class="callout mt-2" style="border-left-color: var(--warn);">
+                {{ icon('alerta') }}
+                <div>
+                    <strong>É o relatório do Contimatic?</strong>
+                    Ele não traz em lugar nenhum a que mês se refere, então escolha aqui —
+                    é isso que decide onde os valores vão ser gravados.
+                    <label class="row text-sm" style="margin:8px 0; cursor:pointer;">
+                        <input type="checkbox" name="formato" value="contimatic" id="marcaContimatic">
+                        Este arquivo é o DRE por centro de custo do Contimatic
+                    </label>
+                    <div class="row" id="competencia" hidden>
+                        <label class="text-sm text-muted" for="imp-mes">Competência</label>
+                        <select class="select input-sm" name="mes" id="imp-mes" style="width:auto;">
+                            {% for m in range(1, 13) %}
+                                <option value="{{ m }}">{{ meses_nome[m] }}</option>
+                            {% endfor %}
+                        </select>
+                        <input class="input input-sm" type="number" name="ano" value="{{ ano_sugerido }}"
+                               min="2000" max="2100" style="width:100px;" aria-label="Ano">
+                    </div>
+                </div>
+            </div>
+
             <div class="callout mt-2">
                 {{ icon('info') }}
                 <div>
@@ -190,6 +213,18 @@
 
 {% block scripts %}
 <script>
+(function () {
+    // A competência só faz sentido para o relatório do Contimatic, que não
+    // traz data. Os outros formatos trazem o mês no próprio cabeçalho.
+    const marca = document.getElementById('marcaContimatic');
+    const campos = document.getElementById('competencia');
+    if (marca && campos) {
+        const alternar = () => { campos.hidden = !marca.checked; };
+        marca.addEventListener('change', alternar);
+        alternar();
+    }
+})();
+
 (function () {
     const area = document.getElementById('areaUpload');
     const campo = document.getElementById('campoArquivo');

@@ -20,6 +20,7 @@ from dre import (
     CAMPOS_TOTAIS,
 )
 from dre_import import importar_planilha_dre_real, RegistroImportacao, desfazer_importacao
+import contimatic
 from contimatic import buscar_partidas
 import backup
 from dre_export import gerar_excel_dre_obra, gerar_excel_dre_consolidado
@@ -1669,6 +1670,18 @@ def importar_dados():
         # Marcado na tela: por padrão a importação preserva o que foi lançado à mão.
         sobrescrever_manuais = request.form.get("sobrescrever_manuais") == "1"
 
+        # O relatório do Contimatic não traz a competência em lugar nenhum, então
+        # o mês e o ano vêm da tela. Sem eles não há onde gravar.
+        if request.form.get("formato") == "contimatic":
+            mes = request.form.get("mes", type=int)
+            ano = request.form.get("ano", type=int)
+            if not mes or not ano or not (1 <= mes <= 12):
+                flash("Escolha o mês e o ano a que o relatório do Contimatic se refere.", "erro")
+                return redirect(url_for("importar_dados"))
+            return _importar_relatorio_contimatic(
+                caminho_arquivo, filename, (ano, mes), sobrescrever_manuais
+            )
+
         if eh_arquivo_dre_real:
             return _importar_arquivo_dre_real(caminho_arquivo, filename, sobrescrever_manuais)
 
@@ -1765,7 +1778,12 @@ def importar_dados():
     # antiga por cima de outra mais nova ressuscitaria valores obsoletos.
     id_reversivel = next((h["id"] for h in historico if not h["desfeita_em"]), None)
 
-    return render_template("importar_dados.html", historico=historico, id_reversivel=id_reversivel)
+    return render_template(
+        "importar_dados.html",
+        historico=historico,
+        id_reversivel=id_reversivel,
+        ano_sugerido=datetime.date.today().year,
+    )
 
 
 def _detectar_nome_empresa(caminho_arquivo, nomes_abas):
@@ -1954,3 +1972,188 @@ if __name__ == "__main__":
     # debug=True expõe um console Python remoto a quem alcançar a porta.
     # Fica desligado por padrão; ligue com INOV_DEBUG=1 durante o desenvolvimento.
     app.run(debug=os.environ.get("INOV_DEBUG") == "1")
+
+
+# ---------------------------------------------------------------------------
+# Importação do relatório do Contimatic
+# ---------------------------------------------------------------------------
+
+def _importar_relatorio_contimatic(caminho_arquivo, nome_arquivo, competencia, sobrescrever_manuais):
+    ano, mes = competencia
+
+    try:
+        leitura = contimatic.ler_relatorio(caminho_arquivo)
+    except Exception as e:
+        app.logger.exception("Falha ao ler relatório do Contimatic")
+        flash(f"Não consegui ler o arquivo: {e}", "erro")
+        return redirect(url_for("importar_dados"))
+
+    for aviso in leitura["avisos"]:
+        flash(aviso, "erro")
+
+    if not leitura["linhas"]:
+        return redirect(url_for("importar_dados"))
+
+    # Conferência contra os totais que o próprio relatório declara. Se a soma
+    # das contas lidas não bate com o "Custos Total..." do arquivo, a leitura
+    # errou em algum lugar — melhor parar antes de gravar número errado.
+    divergencias = contimatic.conferir_totais(leitura)
+    if divergencias:
+        flash(
+            f"A leitura não fecha com os totais do próprio relatório em "
+            f"{len(divergencias)} seção(ões). Nada foi gravado.",
+            "erro",
+        )
+        for d in divergencias[:8]:
+            flash(
+                f"Obra {d['obra_codigo']} · {contimatic.ROTULO_DA_SECAO.get(d['secao'], d['secao'])}: "
+                f"relatório diz {filtro_moeda(d['declarado'])}, soma das contas dá "
+                f"{filtro_moeda(d['lido'])}.",
+                "erro",
+            )
+        return redirect(url_for("importar_dados"))
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM empresas ORDER BY id LIMIT 1")
+    empresa = cur.fetchone()
+    if not empresa:
+        conn.close()
+        flash("Cadastre uma empresa antes de importar.", "erro")
+        return redirect(url_for("importar_dados"))
+
+    importacao_id = _criar_registro_importacao(cur, nome_arquivo, empresa["id"])
+    registro = RegistroImportacao(cur, importacao_id, sobrescrever_manuais)
+
+    try:
+        resumo = contimatic.importar_linhas(
+            cur, leitura["linhas"], competencia, registro, importacao_id,
+            empresa_id=empresa["id"],
+        )
+        _fechar_registro_importacao(cur, importacao_id, registro)
+        _guardar_pendencias(cur, resumo["pendencias"])
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        app.logger.exception("Falha ao gravar relatório do Contimatic")
+        flash(f"Erro ao gravar: {e}. Nada foi alterado.", "erro")
+        return redirect(url_for("importar_dados"))
+
+    conflitos = _descrever_conflitos(cur, registro)
+    conn.close()
+
+    partes = [
+        f"Relatório do Contimatic importado em {MESES_NOME[mes]}/{ano}.",
+        f"{resumo['celulas_atualizadas']} valor(es) do DRE atualizado(s).",
+    ]
+    if resumo["obras_criadas"]:
+        partes.append(f"{len(resumo['obras_criadas'])} obra(s) nova(s) cadastrada(s): "
+                      + ", ".join(resumo["obras_criadas"]) + ".")
+    flash(" ".join(partes), "sucesso")
+
+    _avisar_conflitos(registro, conflitos)
+
+    if resumo["pendencias"]:
+        total = sum(p["valor_total"] for p in resumo["pendencias"])
+        flash(
+            f"{len(resumo['pendencias'])} conta(s) do relatório, somando "
+            f"{filtro_moeda(total)}, NÃO entraram no DRE porque o sistema não sabe "
+            f"a que categoria pertencem. Resolva em Contas do Contimatic — o sistema "
+            f"lembra da decisão nas próximas importações.",
+            "erro",
+        )
+
+    return redirect(url_for("contas_contimatic"))
+
+
+def _guardar_pendencias(cur, pendencias):
+    """
+    Registra as contas não resolvidas em contas_map, sem categoria.
+
+    Guardar a pendência é o que permite a tela de revisão listar o que falta
+    decidir mesmo depois de fechar a página da importação.
+    """
+    agora = datetime.datetime.now().isoformat()
+    for p in pendencias:
+        chave = p.get("chave") or contimatic.chave_da_conta(p["conta_codigo"], p["conta_nome"])
+        if not chave:
+            continue
+        cur.execute(
+            """
+            INSERT INTO contas_map (conta_codigo, conta_nome, categoria_id, ignorar, criado_em)
+            VALUES (?, ?, NULL, 0, ?)
+            ON CONFLICT (conta_codigo) DO UPDATE SET conta_nome = excluded.conta_nome
+            """,
+            (chave, p["conta_nome"], agora),
+        )
+
+
+@app.route("/contas-contimatic")
+def contas_contimatic():
+    """Revisão do de-para entre as contas do Contimatic e o plano de contas."""
+    redir = exigir_login()
+    if redir:
+        return redir
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT m.*, c.nome AS categoria_nome, c.tipo AS categoria_tipo
+        FROM contas_map m
+        LEFT JOIN categorias_conta c ON c.id = m.categoria_id
+        ORDER BY (m.categoria_id IS NULL AND m.ignorar = 0) DESC, m.conta_codigo
+    """)
+    contas = [dict(r) for r in cur.fetchall()]
+
+    resolvedor = contimatic.ResolvedorDeContas(cur)
+    for conta in contas:
+        conta["sugestao"] = (
+            resolvedor.sugerir(conta["conta_nome"])
+            if not conta["categoria_id"] and not conta["ignorar"] else None
+        )
+
+    cur.execute("SELECT id, codigo, nome, tipo FROM categorias_conta WHERE ativo = 1 ORDER BY tipo DESC, ordem")
+    categorias = [dict(r) for r in cur.fetchall()]
+    conn.close()
+
+    return render_template(
+        "contas_contimatic.html",
+        contas=contas,
+        categorias=categorias,
+        pendentes=[c for c in contas if not c["categoria_id"] and not c["ignorar"]],
+    )
+
+
+@app.route("/contas-contimatic/<int:conta_id>", methods=["POST"])
+def definir_conta_contimatic(conta_id):
+    redir = exigir_login()
+    if redir:
+        return redir
+
+    acao = request.form.get("acao")
+    categoria_id = request.form.get("categoria_id", type=int)
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    if acao == "reabrir":
+        cur.execute("UPDATE contas_map SET categoria_id = NULL, ignorar = 0 WHERE id = ?", (conta_id,))
+        flash("Decisão desfeita. Escolha o novo destino da conta.", "sucesso")
+    elif acao == "ignorar":
+        cur.execute("UPDATE contas_map SET categoria_id = NULL, ignorar = 1 WHERE id = ?", (conta_id,))
+        flash("Conta marcada para ser ignorada nas próximas importações.", "sucesso")
+    elif categoria_id:
+        cur.execute(
+            "UPDATE contas_map SET categoria_id = ?, ignorar = 0 WHERE id = ?",
+            (categoria_id, conta_id),
+        )
+        flash("De-para salvo. A próxima importação já usa essa categoria.", "sucesso")
+    else:
+        flash("Escolha uma categoria ou marque para ignorar.", "erro")
+
+    conn.commit()
+    conn.close()
+    return redirect(url_for("contas_contimatic"))

@@ -54,14 +54,14 @@ funciona igual servido por WSGI (gunicorn/waitress), não só por `python app.py
 python -m unittest discover -s tests -t .
 ```
 
-128 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
+148 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
 
 - **`test_calculo_dre.py`** — a matemática do DRE com números conferíveis de cabeça,
   incluindo a vigência das taxas (reajustar hoje não pode alterar mês já fechado) e os
   períodos agregados.
 - **`test_importacao.py`** — preservação de lançamento manual e o desfazer.
-- **`test_contimatic.py`** — o miolo da importação contábil (resolver conta, somar por
-  competência, guardar o detalhe), sem depender do arquivo.
+- **`test_contimatic.py`** — leitura do relatório do Contimatic (monta o arquivo de
+  exemplo linha a linha), conferência de totais, pendências e sugestões.
 - **`test_permissoes.py`** — o que o funcionário pode e o que é da administradora.
 - **`test_ajustes.py`** — Depto Técnico sem taxas, comparativo anual, mesclagem de
   categorias e backup.
@@ -153,33 +153,73 @@ e **números tabulares** (todo dígito com a mesma largura, para as colunas de v
 - `static/css/style.css` é a única folha de estilo — nenhum `<style>` solto nos templates.
 - Impressão: `Ctrl+P` em qualquer DRE sai limpo (sem menu nem botões), pronto para PDF.
 
-## Importação do Contimatic (em andamento)
+## Importação do Contimatic
 
-O objetivo é que o DRE passe a ser alimentado e mantido pelos relatórios do Contimatic:
-joga o relatório analítico no sistema e cada obra se atualiza sozinha.
+O DRE passa a ser alimentado pelo **DRE por centro de custo** exportado do Contimatic.
+O relatório vem como um bloco em cascata, uma seção por obra:
 
-`contimatic.py` está partido em duas camadas de propósito:
+```
+OBRA: 318 VISTA BROOKLIN - ADOLPHO
+  Receitas Brutas
+    Servicos prestados - mercado interno - 25      217.704,60
+  Receitas Brutas Total...                         217.704,60
+  Deduções
+    INSS S/ FATURAMENTO - 544                       (5.878,02)
+  = Receita Líquida                                211.826,58
+  Custos
+    Salarios e Ordenados - 311                     (28.270,19)
+  Custos Total...                                  (95.526,97)
+  = Lucro Bruto                                    116.299,61
+```
 
-| Camada | O que faz | Situação |
-|---|---|---|
-| `ler_relatorio_analitico(caminho)` | Conhece o layout do arquivo e devolve lançamentos normalizados | **Falta o arquivo de exemplo** |
-| `importar_lancamentos(...)` | Resolve conta e centro de custo, soma por competência, atualiza o DRE e guarda o detalhe | Pronto, 19 testes |
+`contimatic.py` está partido em duas camadas: `ler_relatorio()` conhece o layout,
+`importar_linhas()` grava. Só a primeira depende do formato do arquivo.
 
-Um lançamento normalizado é `{obra_codigo, conta_codigo, conta_nome, data, documento,
-historico, valor}` — o adaptador só precisa produzir isso.
+### O relatório não traz a competência
 
-Decisões já embutidas no miolo:
+Não há nada no arquivo que diga a que mês os valores pertencem. **O mês e o ano são
+escolhidos na tela de envio**, e é isso que decide onde os valores são gravados. Sem eles
+a importação é recusada.
 
-- **O detalhe é guardado** (tabela `partidas`). No DRE, todo valor mensal é clicável e abre
-  os lançamentos que o formaram, com data, documento e histórico, e uma conferência entre a
-  soma dos lançamentos e o valor do DRE.
-- **A conta nunca é adivinhada.** Casa pelo de-para explícito (`contas_map`), depois pelo
-  código do plano de contas, depois pelo nome. O que não casar volta como pendência com
-  quantidade e valor — chutar a conta deslocaria valor entre linhas do DRE em silêncio.
-- **Reimportar o mês substitui**, não soma: o relatório do mês é a verdade, então cada
-  competência tocada é reconstruída do zero. Reimportar sem um lançamento o remove.
-- **As proteções valem igual**: passa pelo mesmo `RegistroImportacao`, então lançamento
-  manual continua protegido e a importação continua podendo ser desfeita.
+### Conferência antes de gravar
+
+O relatório declara os próprios totais (`Custos Total...`). O sistema soma as contas que
+leu e compara. Se divergir em qualquer seção, **nada é gravado** — a leitura errou em
+algum lugar, e é melhor saber disso antes do número errado entrar no DRE.
+
+### A conta nunca é adivinhada
+
+Uma conta no lugar errado desloca dinheiro entre linhas do DRE sem gerar erro nenhum.
+A resolução vai por de-para explícito (`contas_map`), código do plano de contas e nome
+exato. O que não casar **não entra** e vira pendência em **Contas do Contimatic**, com o
+valor envolvido e uma sugestão para conferir. Decidido uma vez, o sistema lembra.
+
+Duas travas no sugeridor, vindas de casos reais do relatório:
+
+- **Prefixo** — o Contimatic detalha o que o plano resume (`Servicos prestados - mercado
+  interno` contra `Serviços prestados`) e a coluna estreita corta o nome no fim
+  (`Locação de Maqs, Ferramentas e Equipamen`). Nos dois casos um nome começa o outro.
+- **Nunca de despesa para receita** — `Serviços prestados por terceiros` é despesa e quase
+  casa por prefixo com a receita `Serviços prestados`. Sugerir isso viraria gasto em
+  faturamento.
+
+Contas **sem código** (a coluna corta o código junto) recebem o nome normalizado como
+chave. Sem isso elas não virariam nem pendência e ficariam fora do DRE para sempre.
+
+### Deduções e Despesas Administrativas ficam de fora por padrão
+
+O relatório traz `INSS S/ FATURAMENTO` e `Serviços prestados por terceiros` como valores
+já contabilizados. O DRE do sistema **calcula** imposto (13,15%) e despesa administrativa
+(5,56%) por alíquota. Importar os dois cobraria a mesma despesa duas vezes.
+
+Por isso essas seções não entram sozinhas: aparecem como pendência, e quem importa decide
+uma vez — apontar uma categoria (o de-para vale para qualquer seção) ou marcar para ignorar.
+
+### Reimportar substitui
+
+O relatório do mês é a verdade: cada competência tocada é reconstruída do zero, detalhe
+incluído. Reimportar sem uma conta a remove daquele mês. As proteções de sempre continuam
+valendo — lançamento manual preservado e importação reversível.
 
 ## Segurança e integridade dos dados
 
@@ -256,7 +296,6 @@ a operação e o valor se perderia em silêncio. Não tem desfazer, por isso é 
 
 ## Próximos passos sugeridos
 
-- **Leitor do relatório do Contimatic** — só falta o adaptador do arquivo (ver acima)
 - Limpeza da pasta `uploads/`, que hoje guarda todo arquivo importado para sempre
 
 ## Estrutura
