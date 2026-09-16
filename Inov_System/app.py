@@ -1968,10 +1968,6 @@ def desfazer_importacao_rota(importacao_id):
     return redirect(url_for("importar_dados"))
 
 
-if __name__ == "__main__":
-    # debug=True expõe um console Python remoto a quem alcançar a porta.
-    # Fica desligado por padrão; ligue com INOV_DEBUG=1 durante o desenvolvimento.
-    app.run(debug=os.environ.get("INOV_DEBUG") == "1")
 
 
 # ---------------------------------------------------------------------------
@@ -2157,3 +2153,9 @@ def definir_conta_contimatic(conta_id):
     conn.commit()
     conn.close()
     return redirect(url_for("contas_contimatic"))
+
+
+if __name__ == "__main__":
+    # debug=True expõe um console Python remoto a quem alcançar a porta.
+    # Fica desligado por padrão; ligue com INOV_DEBUG=1 durante o desenvolvimento.
+    app.run(debug=os.environ.get("INOV_DEBUG") == "1")
