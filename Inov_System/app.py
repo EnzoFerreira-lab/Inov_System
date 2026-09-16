@@ -2078,11 +2078,15 @@ def _guardar_pendencias(cur, pendencias):
             continue
         cur.execute(
             """
-            INSERT INTO contas_map (conta_codigo, conta_nome, categoria_id, ignorar, criado_em)
-            VALUES (?, ?, NULL, 0, ?)
-            ON CONFLICT (conta_codigo) DO UPDATE SET conta_nome = excluded.conta_nome
+            INSERT INTO contas_map
+                (conta_codigo, conta_nome, categoria_id, ignorar, secao, motivo, criado_em)
+            VALUES (?, ?, NULL, 0, ?, ?, ?)
+            ON CONFLICT (conta_codigo) DO UPDATE SET
+                conta_nome = excluded.conta_nome,
+                secao = excluded.secao,
+                motivo = excluded.motivo
             """,
-            (chave, p["conta_nome"], agora),
+            (chave, p["conta_nome"], p["secao"], p["motivo"], agora),
         )
 
 
@@ -2106,9 +2110,24 @@ def contas_contimatic():
 
     resolvedor = contimatic.ResolvedorDeContas(cur)
     for conta in contas:
+        conta["pendente"] = not conta["categoria_id"] and not conta["ignorar"]
+        conta["tipo_permitido"] = contimatic.TIPO_SUGERIDO_DA_SECAO.get(conta["secao"])
+        conta["explicacao"] = _explicar_pendencia(conta)
+
+        # A sugestão respeita o tipo da seção. Sem isso a tela chegou a propor a
+        # receita "Serviços prestados" para a despesa "Serviços prestados por
+        # terceiros" — um clique em Salvar viraria gasto em faturamento.
         conta["sugestao"] = (
-            resolvedor.sugerir(conta["conta_nome"])
-            if not conta["categoria_id"] and not conta["ignorar"] else None
+            resolvedor.sugerir(conta["conta_nome"], conta["tipo_permitido"])
+            if conta["pendente"] else None
+        )
+
+        # Só a sugestão forte e do tipo certo já vem escolhida. Nas duvidosas a
+        # pessoa precisa escolher, em vez de só apertar Salvar no que apareceu.
+        conta["pre_selecionar"] = bool(
+            conta["sugestao"]
+            and conta["tipo_permitido"]
+            and conta["sugestao"]["semelhanca"] >= 0.90
         )
 
     cur.execute("SELECT id, codigo, nome, tipo FROM categorias_conta WHERE ativo = 1 ORDER BY tipo DESC, ordem")
@@ -2119,7 +2138,66 @@ def contas_contimatic():
         "contas_contimatic.html",
         contas=contas,
         categorias=categorias,
-        pendentes=[c for c in contas if not c["categoria_id"] and not c["ignorar"]],
+        rotulo_secao=contimatic.ROTULO_DA_SECAO,
+        pendentes=[c for c in contas if c["pendente"]],
+    )
+
+
+def _explicar_pendencia(conta):
+    """
+    Diz, em português, por que a conta está parada — a pergunta que a tela
+    precisa responder é "falta lugar pra isso no sistema, ou é só nome trocado?".
+    """
+    if not conta["pendente"]:
+        return None
+
+    if conta["motivo"] == "secao_sem_equivalente":
+        rotulo = contimatic.ROTULO_DA_SECAO.get(conta["secao"], "essa seção")
+        return (
+            f"Vem da seção {rotulo} do relatório, que o DRE do sistema já cobra por "
+            f"alíquota. Importar o valor também cobraria a mesma despesa duas vezes — "
+            f"por isso precisa da sua decisão."
+        )
+
+    if str(conta["conta_codigo"] or "").startswith("nome:"):
+        return (
+            "Veio sem código no relatório (a coluna cortou o nome). Existe uma conta "
+            "muito parecida no plano; confirme se é a mesma."
+        )
+
+    return (
+        "O código não existe no nosso plano de contas e o nome não bate exatamente. "
+        "Provavelmente é uma conta que já temos, com código ou grafia diferente."
+    )
+
+
+def _conferir_tipo_do_de_para(cur, conta_id, categoria_id):
+    """
+    Impede apontar uma conta redutora para uma categoria de receita, e vice-versa.
+
+    "Serviços prestados por terceiros" (despesa) e "Serviços prestados" (receita)
+    têm nomes quase iguais; ligar uma na outra transformaria gasto em faturamento
+    sem o DRE acusar nada. Devolve a mensagem de erro, ou None se estiver certo.
+    """
+    cur.execute("SELECT conta_nome, secao FROM contas_map WHERE id = ?", (conta_id,))
+    conta = cur.fetchone()
+    cur.execute("SELECT nome, tipo FROM categorias_conta WHERE id = ?", (categoria_id,))
+    categoria = cur.fetchone()
+
+    if not conta or not categoria:
+        return "Conta ou categoria não encontrada."
+
+    esperado = contimatic.TIPO_SUGERIDO_DA_SECAO.get(conta["secao"])
+    if not esperado or categoria["tipo"] == esperado:
+        return None
+
+    rotulo = contimatic.ROTULO_DA_SECAO.get(conta["secao"], conta["secao"])
+    return (
+        f'"{conta["conta_nome"]}" vem da seção {rotulo} do relatório, que reduz o '
+        f'resultado. Não dá para apontá-la para "{categoria["nome"]}", que é uma conta '
+        f'de {"receita" if categoria["tipo"] == "receita" else "custo"}. '
+        f'Escolha uma categoria de {"receita" if esperado == "receita" else "custo"} '
+        f'ou marque a conta para ser ignorada.'
     )
 
 
@@ -2142,11 +2220,15 @@ def definir_conta_contimatic(conta_id):
         cur.execute("UPDATE contas_map SET categoria_id = NULL, ignorar = 1 WHERE id = ?", (conta_id,))
         flash("Conta marcada para ser ignorada nas próximas importações.", "sucesso")
     elif categoria_id:
-        cur.execute(
-            "UPDATE contas_map SET categoria_id = ?, ignorar = 0 WHERE id = ?",
-            (categoria_id, conta_id),
-        )
-        flash("De-para salvo. A próxima importação já usa essa categoria.", "sucesso")
+        erro = _conferir_tipo_do_de_para(cur, conta_id, categoria_id)
+        if erro:
+            flash(erro, "erro")
+        else:
+            cur.execute(
+                "UPDATE contas_map SET categoria_id = ?, ignorar = 0 WHERE id = ?",
+                (categoria_id, conta_id),
+            )
+            flash("De-para salvo. A próxima importação já usa essa categoria.", "sucesso")
     else:
         flash("Escolha uma categoria ou marque para ignorar.", "erro")
 

@@ -17,7 +17,8 @@ from tests.apoio import banco_real_disponivel, BANCO_REAL
 import db
 from dre import calcular_dre_obra, calcular_dre_consolidado, CAMPOS_TOTAIS
 
-MESES_2026 = [(2026, m) for m in range(1, 13)]
+ANO = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 2024
+MESES = [(ANO, m) for m in range(1, 13)]
 QUANTAS_OBRAS = 3
 
 
@@ -34,7 +35,7 @@ def main():
     # As obras de maior receita são as que mais exercitam o cálculo.
     com_movimento = []
     for obra in obras:
-        acumulado = calcular_dre_obra(obra["id"], MESES_2026)["acumulado"]
+        acumulado = calcular_dre_obra(obra["id"], MESES)["acumulado"]
         if acumulado["receita_total"] or acumulado["custos_total"]:
             com_movimento.append((obra["codigo"], acumulado))
 
@@ -48,9 +49,9 @@ def main():
         print("    ),")
     print("}")
 
-    consolidado = calcular_dre_consolidado([o["id"] for o in obras], MESES_2026)["acumulado"]
+    consolidado = calcular_dre_consolidado([o["id"] for o in obras], MESES)["acumulado"]
 
-    print("\nCONSOLIDADO_TRAVADO_2026 = dict(")
+    print("\nCONSOLIDADO_TRAVADO = dict(")
     for campo in CAMPOS_TOTAIS:
         print(f"    {campo}={round(consolidado[campo], 6)!r},")
     print(")")

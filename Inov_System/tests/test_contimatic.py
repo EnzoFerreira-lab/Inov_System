@@ -8,6 +8,7 @@ e três jeitos diferentes de escrever o cabeçalho do centro de custo.
 """
 
 import os
+import re
 import unittest
 import tempfile
 
@@ -435,3 +436,104 @@ class TestProtecoesContinuamValendo(BaseImportacao):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTelaDeRevisao(BaseComBancoTemporario):
+    """
+    A tela de revisão é onde a decisão é tomada, então ela não pode oferecer uma
+    escolha errada. O caso real: "Serviços prestados por terceiros" (despesa do
+    Depto Técnico) vinha com a receita "Serviços prestados" já escolhida no
+    campo — um clique em Salvar viraria R$ 1.513,61 de gasto em faturamento.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import app as app_modulo
+
+        self.app_modulo = app_modulo
+        app_modulo.app.config["TESTING"] = True
+        self.cliente = app_modulo.app.test_client()
+
+        html = self.cliente.get("/").get_data(as_text=True)
+        token = re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
+        self.cliente.post("/", data={"email": "admin@inov.com", "senha": "1234", "_csrf": token})
+
+    def registrar(self, codigo, nome, secao, motivo="pendente"):
+        with self.conectar() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO contas_map (conta_codigo, conta_nome, secao, motivo, criado_em)
+                VALUES (?, ?, ?, ?, '2026-01-01')
+                """,
+                (codigo, nome, secao, motivo),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+    def token(self, rota="/contas-contimatic"):
+        html = self.cliente.get(rota).get_data(as_text=True)
+        achado = re.search(r'name="_csrf" value="([^"]+)"', html)
+        return achado.group(1) if achado else ""
+
+    def test_despesa_nao_recebe_opcao_de_receita(self):
+        self.registrar("222", "Serviços prestados por terceiros",
+                       "despesa_administrativa", "secao_sem_equivalente")
+
+        html = self.cliente.get("/contas-contimatic").get_data(as_text=True)
+        bloco = re.search(r"Serviços prestados por terceiros.*?</tr>", html, re.S).group(0)
+        opcoes = re.findall(r'<option value="\d+"[^>]*>\s*([^<]+?)\s*</option>', bloco)
+
+        self.assertTrue(opcoes, "a linha não ofereceu nenhuma categoria")
+        self.assertFalse(
+            any(o.startswith("Serviços prestados (2)") for o in opcoes),
+            "a despesa está oferecendo uma categoria de receita",
+        )
+
+    def test_receita_legitima_continua_recebendo_a_opcao(self):
+        self.registrar("25", "Servicos prestados - mercado interno", "receita")
+
+        html = self.cliente.get("/contas-contimatic").get_data(as_text=True)
+        bloco = re.search(r"Servicos prestados - mercado interno.*?</tr>", html, re.S).group(0)
+
+        self.assertIn("Serviços prestados (2)", bloco)
+
+    def test_sugestao_fraca_nao_vem_pre_escolhida(self):
+        self.registrar("222", "Serviços prestados por terceiros",
+                       "despesa_administrativa", "secao_sem_equivalente")
+        html = self.cliente.get("/contas-contimatic").get_data(as_text=True)
+        bloco = re.search(r"Serviços prestados por terceiros.*?</tr>", html, re.S).group(0)
+        self.assertNotIn("selected", bloco)
+
+    def test_sugestao_forte_do_tipo_certo_vem_pre_escolhida(self):
+        self.registrar("31", "Medicina Ocupacional e Assist médica", "custo")
+        html = self.cliente.get("/contas-contimatic").get_data(as_text=True)
+        bloco = re.search(r"Medicina Ocupacional e Assist médica.*?</tr>", html, re.S).group(0)
+        self.assertIn("selected", bloco)
+
+    def test_servidor_recusa_o_de_para_de_tipo_errado(self):
+        """Mesmo forçando o formulário por fora, o servidor não aceita."""
+        conta_id = self.registrar("222", "Serviços prestados por terceiros",
+                                  "despesa_administrativa", "secao_sem_equivalente")
+        receita_id = self.id_categoria("Serviços prestados")
+
+        self.cliente.post(
+            f"/contas-contimatic/{conta_id}",
+            data={"acao": "mapear", "categoria_id": receita_id, "_csrf": self.token()},
+        )
+
+        with self.conectar() as conn:
+            gravado = conn.execute(
+                "SELECT categoria_id FROM contas_map WHERE id = ?", (conta_id,)
+            ).fetchone()["categoria_id"]
+
+        self.assertIsNone(gravado, "a despesa foi apontada para uma receita")
+
+    def test_tela_explica_o_motivo_de_cada_pendencia(self):
+        self.registrar("544", "INSS S/ FATURAMENTO", "deducao", "secao_sem_equivalente")
+        self.registrar("31", "Medicina Ocupacional e Assist médica", "custo")
+
+        html = self.cliente.get("/contas-contimatic").get_data(as_text=True)
+
+        self.assertIn("já cobra por alíquota", html)
+        self.assertIn("não bate exatamente", html)

@@ -22,10 +22,12 @@
         <div class="callout" style="border-left-color: var(--neg);">
             {{ icon('alerta') }}
             <div>
-                <strong>{{ pendentes|length }} conta(s) ainda sem destino.</strong>
-                Enquanto estiverem assim, os valores delas <strong>não entram no DRE</strong> —
-                é de propósito: chutar a categoria deslocaria dinheiro entre linhas sem dar erro.
-                Depois de resolver, reimporte o relatório para os valores entrarem.
+                <strong>{{ pendentes|length }} conta(s) aguardando decisão.</strong>
+                Na maioria das vezes não é falta de lugar no sistema — é o mesmo gasto com
+                código ou grafia diferente da nossa. A explicação de cada uma está na linha.
+                Enquanto não decidir, os valores <strong>não entram no DRE</strong>: chutar a
+                categoria deslocaria dinheiro entre linhas sem dar erro nenhum. Depois de
+                resolver, reimporte o relatório para os valores entrarem.
             </div>
         </div>
     </div>
@@ -60,8 +62,13 @@
                     </td>
                     <td class="primary-cell">
                         {{ c.conta_nome or "—" }}
-                        {% if pendente %}
-                            <span class="badge danger" style="margin-left:6px;">sem destino</span>
+                        {% if c.secao %}
+                            <span class="badge neutral" style="margin-left:6px;">
+                                {{ rotulo_secao.get(c.secao, c.secao) }}
+                            </span>
+                        {% endif %}
+                        {% if c.explicacao %}
+                            <span class="sub" style="max-width:46ch;">{{ c.explicacao }}</span>
                         {% endif %}
                     </td>
                     <td>
@@ -74,13 +81,17 @@
                             <form method="POST" action="{{ url_for('definir_conta_contimatic', conta_id=c.id) }}"
                                   class="row" style="gap:6px;">
                                 {{ campo_csrf() }}
+                                {# Só categorias do tipo compatível com a seção da conta:
+                                   uma despesa não pode virar receita por descuido. #}
                                 <select class="select input-sm" name="categoria_id" style="min-width:230px;">
                                     <option value="">Escolha a categoria…</option>
                                     {% for cat in categorias %}
+                                        {% if not c.tipo_permitido or cat.tipo == c.tipo_permitido %}
                                         <option value="{{ cat.id }}"
-                                            {{ 'selected' if c.sugestao and c.sugestao.categoria_id == cat.id }}>
+                                            {{ 'selected' if c.pre_selecionar and c.sugestao.categoria_id == cat.id }}>
                                             {{ cat.nome }}{% if cat.codigo %} ({{ cat.codigo }}){% endif %}
                                         </option>
+                                        {% endif %}
                                     {% endfor %}
                                 </select>
                                 <button class="btn btn-primary btn-sm" type="submit" name="acao" value="mapear">
@@ -91,13 +102,19 @@
                                     Ignorar
                                 </button>
                             </form>
-                            {% if c.sugestao %}
+                            {% if c.sugestao and c.pre_selecionar %}
                                 <span class="sub">
-                                    sugestão: {{ c.sugestao.categoria_nome }}
-                                    ({{ (c.sugestao.semelhanca * 100)|round|int }}% parecido) — confira antes de salvar
+                                    já escolhemos “{{ c.sugestao.categoria_nome }}”
+                                    ({{ (c.sugestao.semelhanca * 100)|round|int }}% parecido) — confira e salve
+                                </span>
+                            {% elif c.sugestao %}
+                                <span class="sub">
+                                    talvez seja “{{ c.sugestao.categoria_nome }}”
+                                    ({{ (c.sugestao.semelhanca * 100)|round|int }}% parecido), mas não escolhemos
+                                    por você — a semelhança é baixa demais
                                 </span>
                             {% else %}
-                                <span class="sub">nenhuma categoria parecida; talvez precise criar uma nova</span>
+                                <span class="sub">nenhuma categoria parecida; talvez precise criar uma nova no plano de contas</span>
                             {% endif %}
                         {% endif %}
                     </td>

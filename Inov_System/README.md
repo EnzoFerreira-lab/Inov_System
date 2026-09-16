@@ -54,7 +54,7 @@ funciona igual servido por WSGI (gunicorn/waitress), não só por `python app.py
 python -m unittest discover -s tests -t .
 ```
 
-148 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
+156 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
 
 - **`test_calculo_dre.py`** — a matemática do DRE com números conferíveis de cabeça,
   incluindo a vigência das taxas (reajustar hoje não pode alterar mês já fechado) e os
@@ -66,10 +66,13 @@ python -m unittest discover -s tests -t .
 - **`test_ajustes.py`** — Depto Técnico sem taxas, comparativo anual, mesclagem de
   categorias e backup.
 - **`test_web.py`** — login, CSRF, todas as telas, exportações e formatação BR.
-- **`test_regressao_dados_reais.py`** — trava os números validados de 2026 contra o
-  `database.db`. É pulado automaticamente onde o banco não existe. Se uma importação
-  mudar legitimamente os dados, confira contra a planilha e regenere os valores com
-  `python -m tests.gerar_valores_travados`.
+- **`test_estrutura_app.py`** — pega rota definida depois do bloco `__main__` (invisível
+  nos testes, quebra ao rodar de verdade) e `url_for()` apontando para rota inexistente.
+- **`test_regressao_dados_reais.py`** — trava os números validados de **2024** contra o
+  `database.db`. O ano é fechado de propósito: ancorado em 2026 o teste ficava vermelho a
+  cada relatório do Contimatic importado, acusando dado novo como se fosse defeito. É
+  pulado onde o banco não existe. Para mudar o ano de referência:
+  `python -m tests.gerar_valores_travados <ano>`.
 
 ### Backup
 

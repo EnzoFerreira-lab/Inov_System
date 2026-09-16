@@ -150,6 +150,8 @@ def criar_tabelas():
             conta_nome TEXT,
             categoria_id INTEGER,
             ignorar INTEGER NOT NULL DEFAULT 0,
+            secao TEXT,
+            motivo TEXT,
             criado_em TEXT,
             FOREIGN KEY (categoria_id) REFERENCES categorias_conta(id)
         )
@@ -217,6 +219,7 @@ def criar_tabelas():
     _migrar_obras(cur)
     _migrar_categorias(cur)
     _migrar_partidas(cur)
+    _migrar_contas_map(cur)
     conn.commit()
 
     _seed_usuario_admin(cur)
@@ -287,6 +290,22 @@ def _migrar_partidas(cur):
     colunas = {r["name"] for r in cur.execute("PRAGMA table_info(partidas)")}
     if "secao" not in colunas:
         cur.execute("ALTER TABLE partidas ADD COLUMN secao TEXT")
+
+
+def _migrar_contas_map(cur):
+    """
+    Acrescenta 'secao' e 'motivo' ao de-para de contas.
+
+    Sem a seção, a tela de revisão não sabe se a conta é receita ou despesa — e
+    chegou a sugerir a receita "Serviços prestados" para a despesa "Serviços
+    prestados por terceiros", que transformaria gasto em faturamento. O motivo
+    é o que permite à tela explicar por que cada conta está parada ali.
+    """
+    colunas = {r["name"] for r in cur.execute("PRAGMA table_info(contas_map)")}
+    if "secao" not in colunas:
+        cur.execute("ALTER TABLE contas_map ADD COLUMN secao TEXT")
+    if "motivo" not in colunas:
+        cur.execute("ALTER TABLE contas_map ADD COLUMN motivo TEXT")
 
 
 def _migrar_categorias(cur):
