@@ -1,0 +1,109 @@
+{#
+  Alerta de mês com buraco nos dados.
+
+  Espera 'lacunas' (ver diagnostico.detectar_lacunas) e 'ano'. Em 'por_obra'
+  o texto fala de uma obra só, porque está dentro do DRE dela.
+#}
+{% from '_icons.html' import icon %}
+
+{% if meses_ausentes %}
+<div class="card mb-2 card-lacuna">
+    <div class="card-section">
+        <div class="callout callout-lacuna">
+            {{ icon('calendario') }}
+            <div>
+                <strong>
+                    {{ meses_ausentes|length }} mês(es) já venceram e não foram importados:
+                    {% for m in meses_ausentes %}{{ m.mes_nome }}/{{ ano }}{% if not loop.last %}, {% endif %}{% endfor %}.
+                </strong>
+                O sistema tem dados até
+                {{ meses_abrev[(meses_ausentes|map(attribute='mes')|min) - 1] }}/{{ ano }}.
+                Peça o relatório do Contimatic desses meses e importe em
+                <a href="{{ url_for('importar_dados') }}">Importar Planilha</a>.
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if lacunas %}
+<div class="card mb-2 card-lacuna">
+    <div class="card-section">
+        <div class="callout callout-lacuna">
+            {{ icon('alerta') }}
+            <div>
+                {% if por_obra %}
+                    <strong>
+                        Esta obra ficou sem lançamento em
+                        {% for l in lacunas %}{{ l.mes_nome }}/{{ ano }}{% if not loop.last %}, {% endif %}{% endfor %},
+                        mas tem movimento antes e depois.
+                    </strong>
+                    Quase sempre isso é mês que não foi importado, não mês parado.
+                {% else %}
+                    {% set total_obras = lacunas|map(attribute='obras')|map('length')|sum %}
+                    <strong>
+                        {{ total_obras }} obra(s) sem lançamento em
+                        {% for l in lacunas %}{{ l.mes_nome }}{% if not loop.last %}, {% endif %}{% endfor %}/{{ ano }},
+                        com movimento antes e depois.
+                    </strong>
+                    Uma obra que faturou em maio e em julho não some em junho por acaso —
+                    quase sempre é mês que não foi importado.
+                {% endif %}
+            </div>
+        </div>
+
+        {% for l in lacunas %}
+        <div class="lacuna-mes">
+            <div class="row-between">
+                <h3>{{ l.mes_nome }}/{{ ano }}</h3>
+                {% if l.receita_de_referencia %}
+                <span class="text-sm text-muted">
+                    essas obras faturaram R$ {{ l.receita_de_referencia|moeda }} no mês anterior
+                </span>
+                {% endif %}
+            </div>
+
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Obra</th>
+                            <th class="num">Mês anterior</th>
+                            <th class="num">{{ l.mes_nome }}</th>
+                            <th class="num">Mês seguinte</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in l.obras %}
+                        <tr>
+                            <td class="primary-cell">
+                                <a href="{{ url_for('obra_dre', obra_id=o.obra_id) }}?ano={{ ano }}">
+                                    {{ o.codigo }} — {{ o.nome }}
+                                </a>
+                            </td>
+                            <td class="num">
+                                {{ o.receita_anterior|moeda }}
+                                <span class="sub">{{ meses_abrev[o.mes_anterior] }}</span>
+                            </td>
+                            <td class="num valor-neg">0,00</td>
+                            <td class="num">
+                                {{ o.receita_seguinte|moeda }}
+                                <span class="sub">{{ meses_abrev[o.mes_seguinte] }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+
+        <p class="helper-text mt-2">
+            Para corrigir: pegue o relatório do Contimatic desse mês e importe em
+            <a href="{{ url_for('importar_dados') }}">Importar Planilha</a>, escolhendo a
+            competência certa. Se o mês estiver correto assim — obra realmente parada —
+            pode ignorar este aviso.
+        </p>
+    </div>
+</div>
+{% endif %}

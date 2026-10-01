@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% set ativo = 'importar' %}
+{% from '_icons.html' import icon %}
+
+{% block titulo %}Conferência da importação{% endblock %}
+
+{% block trilha %}
+    <nav class="breadcrumb">
+        <a href="{{ url_for('importar_dados') }}">Importar Planilha</a> /
+        <span>Conferência</span>
+    </nav>
+{% endblock %}
+
+{% block cabecalho %}Conferência da importação{% endblock %}
+{% block descricao %}
+    {{ importacao["arquivo"] }}
+    {% if ano %}· competência {{ meses_nome[mes] }}/{{ ano }}{% endif %}
+    · importado em {{ importacao["criado_em"][:16]|replace('T', ' ') }}
+{% endblock %}
+
+{% block acoes %}
+    <a href="{{ url_for('importar_dados') }}" class="btn btn-light">{{ icon('voltar') }} Importar</a>
+    {% if ano %}
+    <a href="{{ url_for('totais') }}?ano={{ ano }}" class="btn btn-soft">{{ icon('totais') }} Ver o DRE</a>
+    {% endif %}
+{% endblock %}
+
+{% block conteudo %}
+
+{% if not linhas %}
+    <div class="card">
+        <div class="empty-state">
+            {{ icon('vazio') }}
+            <h3>Sem conferência para esta importação</h3>
+            <p>Importações antigas, feitas antes desta tela existir, não guardaram a
+               referência do relatório. Reimporte o arquivo para gerar a conferência.</p>
+        </div>
+    </div>
+{% else %}
+
+<div class="cards-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="card metric-card {{ 'is-liquido' if not divergem }}">
+        <div class="metric-label">Obras que conferem</div>
+        <div class="metric-value {{ 'valor-pos' if not divergem else '' }}">
+            {{ conferem|length }}<span class="currency" style="margin-left:4px;">de {{ linhas|length }}</span>
+        </div>
+        <span class="metric-foot">
+            {% if divergem %}
+                {{ divergem|length }} obra(s) precisam de atenção
+            {% else %}
+                o sistema reproduz o relatório inteiro
+            {% endif %}
+        </span>
+    </div>
+
+    <div class="card metric-card is-receita">
+        <div class="metric-label">Receita importada</div>
+        <div class="metric-value">
+            <span class="currency">R$</span>{{ linhas|sum(attribute='receita_gravada')|moeda }}
+        </div>
+    </div>
+
+    <div class="card metric-card is-custo">
+        <div class="metric-label">Custo importado</div>
+        <div class="metric-value">
+            <span class="currency">R$</span>{{ linhas|sum(attribute='custo_gravado')|moeda }}
+        </div>
+    </div>
+</div>
+
+{% if total_fora %}
+<div class="card mb-2">
+    <div class="card-section">
+        <div class="callout">
+            {{ icon('info') }}
+            <div>
+                <strong>R$ {{ total_fora|moeda }} do relatório não entraram no DRE</strong>
+                — por decisão de vocês (conta marcada para ignorar) ou por falta de decisão
+                (conta sem destino). O detalhe está na coluna "Fora do DRE", conta por conta.
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Obra por obra</h2>
+            <p>O que a importação gravou, comparado com o que está no sistema agora.
+               Se alguém alterar um valor à mão depois, a diferença aparece aqui.</p>
+        </div>
+        {% if linhas|length > 8 %}
+        <div class="card-header-actions">
+            <label class="search-field">
+                <span class="sr-only">Buscar obra</span>
+                {{ icon('busca') }}
+                <input class="input input-sm" type="search" data-filter-input placeholder="Buscar obra…">
+            </label>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="table-wrap">
+        <table class="table" data-filter-table>
+            <thead>
+                <tr>
+                    <th>Obra</th>
+                    <th class="num">Receita</th>
+                    <th class="num">Custo</th>
+                    <th class="num">Fora do DRE</th>
+                    <th class="shrink">Situação</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in linhas %}
+                <tr data-busca="{{ l.codigo }} {{ l.nome }}">
+                    <td class="primary-cell">
+                        <a href="{{ url_for('obra_dre', obra_id=l.obra_id) }}?ano={{ l.ano }}">
+                            {{ l.codigo }} — {{ l.nome }}
+                        </a>
+                    </td>
+                    <td class="num">
+                        {{ l.receita_gravada|moeda }}
+                        {% if l.dif_receita|abs >= 0.01 %}
+                            <span class="sub valor-neg">sistema: {{ l.receita_sistema|moeda }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="num">
+                        {{ l.custo_gravado|moeda }}
+                        {% if l.dif_custo|abs >= 0.01 %}
+                            <span class="sub valor-neg">sistema: {{ l.custo_sistema|moeda }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="num">
+                        {% if l.valor_fora %}
+                            <span class="text-muted">{{ l.valor_fora|moeda }}</span>
+                            {% for conta, valor in l.detalhe_fora.items() %}
+                                <span class="sub">{{ conta }}: {{ valor|moeda }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-faint">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if l.confere %}
+                            <span class="badge success">Confere</span>
+                        {% else %}
+                            <span class="badge danger">Diverge</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr data-filter-empty hidden>
+                    <td colspan="5">
+                        <div class="empty-state">
+                            {{ icon('busca') }}
+                            <h3>Nenhuma obra encontrada</h3>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-legend">
+        <span><strong>Confere</strong> = o valor no sistema é igual ao que a importação gravou</span>
+        <span>A conferência fica guardada: dá para voltar aqui meses depois</span>
+    </div>
+</div>
+
+{% endif %}
+
+{% endblock %}

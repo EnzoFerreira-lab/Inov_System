@@ -157,6 +157,32 @@ def criar_tabelas():
         )
     """)
 
+    # O que o relatório dizia, por obra e competência, guardado no momento da
+    # importação. É a referência externa: permite a tela responder "o relatório
+    # trazia X, o sistema tem Y" a qualquer momento — não só logo depois de
+    # importar, mas também meses depois, se alguém editar um valor à mão.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS conferencia_importacao (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            importacao_id INTEGER NOT NULL,
+            obra_id INTEGER NOT NULL,
+            ano INTEGER NOT NULL,
+            mes INTEGER NOT NULL,
+            receita_gravada REAL NOT NULL DEFAULT 0,
+            custo_gravado REAL NOT NULL DEFAULT 0,
+            valor_fora REAL NOT NULL DEFAULT 0,
+            contas_fora TEXT,
+            criado_em TEXT,
+            FOREIGN KEY (importacao_id) REFERENCES importacoes(id),
+            FOREIGN KEY (obra_id) REFERENCES obras(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_conferencia_importacao
+        ON conferencia_importacao (importacao_id)
+    """)
+
     # Cada importação vira um registro, e cada valor que ela alterou guarda o
     # estado anterior. É o que permite desfazer um arquivo enviado por engano
     # sem restaurar o banco inteiro.

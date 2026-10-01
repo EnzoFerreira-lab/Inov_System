@@ -21,6 +21,7 @@ from dre import (
 )
 from dre_import import importar_planilha_dre_real, RegistroImportacao, desfazer_importacao
 import contimatic
+import diagnostico
 from contimatic import buscar_partidas
 import backup
 from dre_export import gerar_excel_dre_obra, gerar_excel_dre_consolidado
@@ -704,6 +705,8 @@ def dashboard():
 
     empresas_lista = listar_empresas(cur)
     anos = anos_com_dados(cur, ano_atual)
+    lacunas = diagnostico.detectar_lacunas(cur, ano_atual)
+    meses_ausentes = diagnostico.detectar_meses_ausentes(cur, ano_atual)
     conn.close()
 
     obra_ids = [o["id"] for o in obras]
@@ -754,6 +757,9 @@ def dashboard():
         "dashboard.html",
         ano_atual=ano_atual,
         anos=anos,
+        lacunas=lacunas,
+        meses_ausentes=meses_ausentes,
+        resumo_lacunas=diagnostico.resumir_lacunas(lacunas, meses_ausentes),
         empresas=empresas_lista,
         empresa_id=empresa_id,
         acumulado=acumulado,
@@ -1010,6 +1016,7 @@ def obra_dre(obra_id):
         return redirect(url_for("obras"))
 
     ano, anos = escolher_ano_da_obra(cur, obra_id, request.args.get("ano", type=int))
+    lacunas = diagnostico.detectar_lacunas(cur, ano, obra_id=obra_id)
     conn.close()
 
     meses = meses_do_ano(ano)
@@ -1027,6 +1034,7 @@ def obra_dre(obra_id):
         obra=obra,
         ano=ano,
         anos=anos,
+        lacunas=lacunas,
         comparativo=comparativo,
         meses=meses,
         meses_nome=MESES_NOME,
@@ -2029,6 +2037,7 @@ def _importar_relatorio_contimatic(caminho_arquivo, nome_arquivo, competencia, s
         )
         _fechar_registro_importacao(cur, importacao_id, registro)
         _guardar_pendencias(cur, resumo["pendencias"])
+        _guardar_conferencia(cur, importacao_id, competencia, resumo["conferencia"])
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -2061,7 +2070,9 @@ def _importar_relatorio_contimatic(caminho_arquivo, nome_arquivo, competencia, s
             "erro",
         )
 
-    return redirect(url_for("contas_contimatic"))
+    # A conferência é o fecho da importação: mostra obra por obra se o que está
+    # no sistema bate com o que o relatório trazia.
+    return redirect(url_for("conferencia_importacao", importacao_id=importacao_id))
 
 
 def _guardar_pendencias(cur, pendencias):
@@ -2088,6 +2099,92 @@ def _guardar_pendencias(cur, pendencias):
             """,
             (chave, p["conta_nome"], p["secao"], p["motivo"], agora),
         )
+
+
+def _guardar_conferencia(cur, importacao_id, competencia, conferencia):
+    """Congela o que o relatório trazia por obra, para a tela conferir depois."""
+    import json
+
+    ano, mes = competencia
+    agora = datetime.datetime.now().isoformat()
+
+    for obra_id, dados in conferencia.items():
+        cur.execute(
+            """
+            INSERT INTO conferencia_importacao
+                (importacao_id, obra_id, ano, mes, receita_gravada, custo_gravado,
+                 valor_fora, contas_fora, criado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (importacao_id, obra_id, ano, mes,
+             dados["receita_gravada"], dados["custo_gravado"],
+             dados["valor_fora"], json.dumps(dados["contas_fora"], ensure_ascii=False), agora),
+        )
+
+
+@app.route("/importacoes/<int:importacao_id>/conferencia")
+def conferencia_importacao(importacao_id):
+    """
+    Obra por obra: o que o relatório trazia, o que entrou e o que está hoje no
+    sistema. Compara com o valor vivo, não com uma foto — então também acusa se
+    alguém mexer num valor à mão depois da importação.
+    """
+    import json
+
+    redir = exigir_login()
+    if redir:
+        return redir
+
+    conn = conectar()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM importacoes WHERE id = ?", (importacao_id,))
+    importacao = cur.fetchone()
+    if not importacao:
+        conn.close()
+        flash("Importação não encontrada.", "erro")
+        return redirect(url_for("importar_dados"))
+
+    cur.execute("""
+        SELECT c.*, o.codigo, o.nome
+        FROM conferencia_importacao c
+        JOIN obras o ON o.id = c.obra_id
+        WHERE c.importacao_id = ?
+        ORDER BY c.receita_gravada DESC, c.custo_gravado DESC
+    """, (importacao_id,))
+    linhas = [dict(r) for r in cur.fetchall()]
+
+    competencia = (linhas[0]["ano"], linhas[0]["mes"]) if linhas else (None, None)
+
+    for linha in linhas:
+        cur.execute("""
+            SELECT cc.tipo, COALESCE(SUM(l.valor), 0) AS total
+            FROM lancamentos l
+            JOIN categorias_conta cc ON cc.id = l.categoria_id
+            WHERE l.obra_id = ? AND l.ano = ? AND l.mes = ?
+            GROUP BY cc.tipo
+        """, (linha["obra_id"], linha["ano"], linha["mes"]))
+        atual = {r["tipo"]: r["total"] for r in cur.fetchall()}
+
+        linha["receita_sistema"] = atual.get("receita", 0.0)
+        linha["custo_sistema"] = atual.get("custo", 0.0)
+        linha["dif_receita"] = linha["receita_sistema"] - linha["receita_gravada"]
+        linha["dif_custo"] = linha["custo_sistema"] - linha["custo_gravado"]
+        linha["confere"] = abs(linha["dif_receita"]) < 0.01 and abs(linha["dif_custo"]) < 0.01
+        linha["detalhe_fora"] = json.loads(linha["contas_fora"] or "{}")
+
+    conn.close()
+
+    return render_template(
+        "conferencia.html",
+        importacao=importacao,
+        linhas=linhas,
+        ano=competencia[0],
+        mes=competencia[1],
+        conferem=[l for l in linhas if l["confere"]],
+        divergem=[l for l in linhas if not l["confere"]],
+        total_fora=sum(l["valor_fora"] for l in linhas),
+    )
 
 
 @app.route("/contas-contimatic")

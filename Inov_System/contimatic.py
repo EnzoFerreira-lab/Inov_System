@@ -508,11 +508,28 @@ def importar_linhas(cur, linhas, competencia, registro, importacao_id=None,
 
     agora = datetime.datetime.now().isoformat()
 
+    cur.execute("SELECT id, tipo FROM categorias_conta")
+    tipo_da_categoria = {r["id"]: r["tipo"] for r in cur.fetchall()}
+
     celulas = {}
     detalhes = []
     obras_criadas = []
     obras_desconhecidas = {}
     ignoradas = 0
+
+    # Conferência por obra: o que entrou e o que ficou de fora, com o motivo.
+    # É o que permite a tela responder depois "o relatório trazia X, o sistema
+    # tem Y, e a diferença é esta conta aqui".
+    conferencia = {}
+
+    def anotar(obra_id, campo, valor, conta=None):
+        c = conferencia.setdefault(obra_id, {
+            "receita_gravada": 0.0, "custo_gravado": 0.0,
+            "valor_fora": 0.0, "contas_fora": {},
+        })
+        c[campo] += abs(valor or 0)
+        if conta:
+            c["contas_fora"][conta] = c["contas_fora"].get(conta, 0.0) + abs(valor or 0)
 
     for linha in linhas:
         codigo_obra = _codigo_limpo(linha["obra_codigo"]) or str(linha["obra_codigo"]).upper()
@@ -545,6 +562,8 @@ def importar_linhas(cur, linhas, competencia, registro, importacao_id=None,
         categoria_id, motivo = resolvedor.resolver(linha["conta_codigo"], linha["conta_nome"])
 
         if motivo == "ignorada":
+            anotar(obra_id, "valor_fora", linha["valor"],
+                   f"{linha['conta_nome']} (ignorada de propósito)")
             ignoradas += 1
             continue
 
@@ -553,6 +572,8 @@ def importar_linhas(cur, linhas, competencia, registro, importacao_id=None,
                 resolvedor.registrar_pendencia(linha, "secao_sem_equivalente")
             else:
                 resolvedor.registrar_pendencia(linha, motivo)
+            anotar(obra_id, "valor_fora", linha["valor"],
+                   f"{linha['conta_nome']} (sem destino definido)")
             ignoradas += 1
             continue
 
@@ -561,11 +582,17 @@ def importar_linhas(cur, linhas, competencia, registro, importacao_id=None,
             # Precisa de confirmação explícita, senão a despesa entra duas vezes:
             # uma pelo valor contabilizado e outra pela alíquota que o DRE aplica.
             resolvedor.registrar_pendencia(linha, "secao_sem_equivalente")
+            anotar(obra_id, "valor_fora", linha["valor"],
+                   f"{linha['conta_nome']} (seção sem equivalente no DRE)")
             ignoradas += 1
             continue
 
         chave = (obra_id, categoria_id)
         celulas[chave] = celulas.get(chave, 0.0) + abs(linha["valor"] or 0)
+
+        campo = ("receita_gravada" if tipo_da_categoria.get(categoria_id) == "receita"
+                 else "custo_gravado")
+        anotar(obra_id, campo, linha["valor"])
 
         detalhes.append({
             "obra_id": obra_id,
@@ -612,6 +639,7 @@ def importar_linhas(cur, linhas, competencia, registro, importacao_id=None,
 
     return {
         "competencia": (ano, mes),
+        "conferencia": conferencia,
         "linhas_lidas": len(linhas),
         "celulas_atualizadas": gravados,
         "partidas_gravadas": len(detalhes),

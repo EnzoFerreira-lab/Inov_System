@@ -33,6 +33,8 @@
 
 {% block conteudo %}
 
+{% with ano = ano_atual %}{% include '_lacunas.html' %}{% endwith %}
+
 <div class="cards-grid">
     <div class="card metric-card is-receita">
         <div class="metric-label">Receita Bruta</div>

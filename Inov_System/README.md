@@ -54,7 +54,7 @@ funciona igual servido por WSGI (gunicorn/waitress), não só por `python app.py
 python -m unittest discover -s tests -t .
 ```
 
-156 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
+193 testes, sem dependência externa (usam `unittest` da biblioteca padrão):
 
 - **`test_calculo_dre.py`** — a matemática do DRE com números conferíveis de cabeça,
   incluindo a vigência das taxas (reajustar hoje não pode alterar mês já fechado) e os
@@ -66,6 +66,8 @@ python -m unittest discover -s tests -t .
 - **`test_ajustes.py`** — Depto Técnico sem taxas, comparativo anual, mesclagem de
   categorias e backup.
 - **`test_web.py`** — login, CSRF, todas as telas, exportações e formatação BR.
+- **`test_diagnostico.py`** — a deteção de mês com buraco, incluindo os casos em que ela
+  **não** pode acusar nada (obra que ainda não começou, que já encerrou, linha zerada).
 - **`test_estrutura_app.py`** — pega rota definida depois do bloco `__main__` (invisível
   nos testes, quebra ao rodar de verdade) e `url_for()` apontando para rota inexistente.
 - **`test_regressao_dados_reais.py`** — trava os números validados de **2024** contra o
@@ -190,6 +192,19 @@ O relatório declara os próprios totais (`Custos Total...`). O sistema soma as 
 leu e compara. Se divergir em qualquer seção, **nada é gravado** — a leitura errou em
 algum lugar, e é melhor saber disso antes do número errado entrar no DRE.
 
+### Conferência depois de importar
+
+Toda importação termina numa tela de conferência, obra por obra: o que a importação gravou,
+o que está no sistema agora, e o que ficou de fora com o motivo conta a conta ("ignorada de
+propósito" ou "sem destino definido").
+
+A comparação é com o **valor vivo**, não com uma foto do momento da importação — então a
+tela também acusa se alguém editar um valor à mão depois. E fica guardada: dá para voltar
+nela meses depois (`/importacoes/<id>/conferencia`).
+
+Existe porque essa verificação só acontecia quando alguém rodava um script à mão, e a rotina
+mensal não pode depender disso.
+
 ### A conta nunca é adivinhada
 
 Uma conta no lugar errado desloca dinheiro entre linhas do DRE sem gerar erro nenhum.
@@ -209,6 +224,29 @@ Duas travas no sugeridor, vindas de casos reais do relatório:
 Contas **sem código** (a coluna corta o código junto) recebem o nome normalizado como
 chave. Sem isso elas não virariam nem pendência e ficariam fora do DRE para sempre.
 
+### Decisões da contabilidade (out/2026)
+
+Confirmado por eles, e já aplicado no de-para (`contas_map`):
+
+| Conta do Contimatic | Decisão | Por quê |
+|---|---|---|
+| `544` INSS S/ FATURAMENTO | **Ignorar** | Já está dentro dos 13,15% de "Impostos sobre Serviços" que o DRE aplica. Importar cobraria o mesmo imposto duas vezes. |
+| `222` Serviços prestados por terceiros | Custo do Depto Técnico | É um custo normal do departamento. Entrou numa **conta própria**, não na `324` "Serviços de Terceiros" — no Contimatic as duas são separadas e aparecem juntas no mesmo centro de custo. |
+| `25` Servicos prestados - mercado interno | = "Serviços prestados" | Mesma conta; o Contimatic detalha o que o nosso plano resume. |
+| `31` Medicina Ocupacional e Assist médica | = "Medicina Ocupacional e Assist. Médica" | Mesma conta, grafia diferente. |
+
+As duas contas que o relatório traz **sem código** também foram confirmadas: "Locação de
+Maqs, Ferramentas e Equipamen" é "Locação de Máqs, Ferramentas e Equipamentos" e "Despesas
+com Radio e Telefonia Celular" é "Despesa com Radio e Telefonia Celular" — nos dois casos a
+coluna estreita do relatório cortou o nome, e o código junto. Como vieram sem código, ficam
+no de-para com o **nome normalizado como chave** (`nome:<...>`); se um dia o relatório sair
+com a coluna mais larga e o código aparecer, o sistema vai tratá-las como contas novas e
+pedir a confirmação uma vez.
+
+**Julho/2026 fechado:** as 19 obras do relatório conferem exatamente com o sistema —
+R$ 1.792.681,29 de receita e R$ 1.207.976,80 de custo. Fora só o INSS, por decisão da
+contabilidade.
+
 ### Deduções e Despesas Administrativas ficam de fora por padrão
 
 O relatório traz `INSS S/ FATURAMENTO` e `Serviços prestados por terceiros` como valores
@@ -223,6 +261,35 @@ uma vez — apontar uma categoria (o de-para vale para qualquer seção) ou marc
 O relatório do mês é a verdade: cada competência tocada é reconstruída do zero, detalhe
 incluído. Reimportar sem uma conta a remove daquele mês. As proteções de sempre continuam
 valendo — lançamento manual preservado e importação reversível.
+
+## Conferência dos dados (diagnostico.py)
+
+O sistema procura sozinho um tipo de buraco: o **mês sanduíche** — a obra teve movimento
+antes e depois, mas no mês ficou zerada. Uma obra que faturou em maio e em julho não some
+em junho por acaso; quase sempre é mês que não foi importado.
+
+O sinal é forte porque não depende de média nem de palpite, e por isso quase não dá falso
+positivo. Mês em que a obra ainda não tinha começado, ou já tinha encerrado, não conta —
+só o que está **entre** o primeiro e o último movimento dela no ano. Lançamento com valor
+zero (a planilha cria linha zerada para mês futuro) também não conta como movimento.
+
+Há um segundo detector, que cobre o que o primeiro não vê: **mês que já venceu e não foi
+importado**. Um mês no fim da fila não tem "depois" para formar o sanduíche, então passava
+batido — foi o caso de agosto e setembro de 2026, com o sistema parado em julho e nada
+avisando que dois meses já tinham vencido. Vale só para o ano corrente, do primeiro mês com
+dado até o mês passado; em ano fechado não dá para separar "não importaram" de "a obra nem
+existia".
+
+Os dois alertas aparecem no Dashboard, e o do buraco no meio também no DRE da obra afetada.
+
+A data de hoje fica isolada em `diagnostico._hoje()` só para o teste poder fixá-la — sem
+isso, um teste que monta "agosto está vencido" passaria hoje e quebraria no mês seguinte.
+
+**Foi assim que apareceu junho/2026:** a planilha importada no começo do projeto se chamava
+`06-2026` — foi gerada durante junho, com o mês ainda em fechamento. Seis obras ficaram
+zeradas, incluindo quatro que faturaram R$ 976.577,74 em maio e voltaram a faturar em julho.
+O dado estava errado no sistema desde o primeiro dia e ninguém notou, porque nada olhava.
+Rodando o detector em 2024 e 2025 (anos completos) não acusa nada.
 
 ## Segurança e integridade dos dados
 

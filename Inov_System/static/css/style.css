@@ -1664,3 +1664,53 @@ body.auth-body{
         print-color-adjust: exact;
     }
 }
+
+
+/* --------------------------------------------------------------------------
+   23. Alerta de lacuna nos dados
+
+   Cor de atenção, não de erro: um mês sem lançamento costuma ser importação
+   que faltou, e às vezes é só obra parada mesmo. O aviso pede conferência,
+   não anuncia defeito.
+   -------------------------------------------------------------------------- */
+
+.card-lacuna{
+    border-color: #fde68a;
+}
+
+.callout.callout-lacuna{
+    background: var(--warn-soft);
+    border-color: var(--border);
+    border-left-color: var(--warn);
+    color: var(--text);
+}
+
+.callout.callout-lacuna svg{
+    color: var(--warn);
+}
+
+.lacuna-mes{
+    margin-top: 16px;
+}
+
+.lacuna-mes h3{
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+.lacuna-mes .table-wrap{
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+}
+
+.lacuna-mes .table td,
+.lacuna-mes .table th{
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.lacuna-mes .table a:hover{
+    color: var(--brand-text);
+    text-decoration: underline;
+}

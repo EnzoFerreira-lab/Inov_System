@@ -70,6 +70,8 @@
     </div>
 </div>
 
+{% with por_obra = true %}{% include '_lacunas.html' %}{% endwith %}
+
 {% if comparativo %}{% include '_comparativo.html' %}{% endif %}
 
 {% set receitas = categorias|selectattr('tipo', 'equalto', 'receita')|list %}

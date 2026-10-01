@@ -24,6 +24,8 @@ from contimatic import (
 from dre_import import RegistroImportacao, desfazer_importacao
 from dre import calcular_dre_obra
 
+import app as app_modulo
+
 
 # Transcrito dos relatórios reais.
 RELATORIO = [
@@ -245,6 +247,11 @@ class BaseImportacao(BaseComBancoTemporario):
                 RegistroImportacao(cur, importacao_id, sobrescrever),
                 importacao_id,
                 empresa_id=self.empresa_id,
+            )
+            # Mesmo passo que a rota de importação faz, para a conferência
+            # existir também nos testes.
+            app_modulo._guardar_conferencia(
+                cur, importacao_id, competencia, resumo["conferencia"]
             )
             conn.commit()
         return resumo, importacao_id
@@ -537,3 +544,131 @@ class TestTelaDeRevisao(BaseComBancoTemporario):
 
         self.assertIn("já cobra por alíquota", html)
         self.assertIn("não bate exatamente", html)
+
+
+class TestConferencia(BaseImportacao):
+    """
+    A conferência é o fecho da importação: obra por obra, o que o relatório
+    trazia contra o que está no sistema. Antes isso só existia quando alguém
+    rodava um script à mão, e a rotina mensal dependia disso.
+    """
+
+    def conferencia(self, importacao_id):
+        with self.conectar() as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM conferencia_importacao WHERE importacao_id = ?",
+                (importacao_id,),
+            )]
+
+    def test_guarda_uma_linha_por_obra(self):
+        _, importacao_id = self.importar()
+        obras = {l["obra_id"] for l in self.conferencia(importacao_id)}
+        self.assertGreaterEqual(len(obras), 3)
+
+    def test_separa_receita_de_custo(self):
+        resumo, importacao_id = self.importar()
+
+        # a obra 318 tem receita e custo no relatório de exemplo
+        with self.conectar() as conn:
+            linha = conn.execute("""
+                SELECT c.* FROM conferencia_importacao c
+                JOIN obras o ON o.id = c.obra_id
+                WHERE c.importacao_id = ? AND o.codigo = '318'
+            """, (importacao_id,)).fetchone()
+
+        # a conta de receita (25) fica pendente, então nada de receita entra
+        self.assertEqual(linha["receita_gravada"], 0.0)
+        self.assertGreater(linha["custo_gravado"], 0.0)
+
+    def test_registra_o_que_ficou_de_fora_e_por_que(self):
+        import json
+
+        _, importacao_id = self.importar()
+
+        fora = {}
+        for linha in self.conferencia(importacao_id):
+            fora.update(json.loads(linha["contas_fora"] or "{}"))
+
+        self.assertTrue(fora, "nada foi registrado como fora do DRE")
+        self.assertTrue(
+            any("sem destino" in motivo or "sem equivalente" in motivo for motivo in fora),
+            f"o motivo não foi registrado: {list(fora)}",
+        )
+
+    def test_conta_ignorada_aparece_como_decisao(self):
+        import json
+
+        with self.conectar() as conn:
+            conn.execute(
+                "INSERT INTO contas_map (conta_codigo, ignorar, criado_em) VALUES ('544', 1, '2026')"
+            )
+            conn.commit()
+
+        _, importacao_id = self.importar()
+
+        fora = {}
+        for linha in self.conferencia(importacao_id):
+            fora.update(json.loads(linha["contas_fora"] or "{}"))
+
+        self.assertTrue(
+            any("ignorada de propósito" in motivo for motivo in fora),
+            f"a conta ignorada não foi marcada como decisão: {list(fora)}",
+        )
+
+    def test_soma_do_gravado_bate_com_o_que_foi_para_o_dre(self):
+        _, importacao_id = self.importar()
+
+        gravado = sum(
+            l["receita_gravada"] + l["custo_gravado"] for l in self.conferencia(importacao_id)
+        )
+
+        with self.conectar() as conn:
+            no_dre = conn.execute(
+                "SELECT COALESCE(SUM(valor), 0) t FROM lancamentos WHERE ano = 2026 AND mes = 7"
+            ).fetchone()["t"]
+
+        self.assertAlmostEqual(gravado, no_dre, places=2)
+
+
+class TestTelaDeConferencia(BaseImportacao):
+
+    def setUp(self):
+        super().setUp()
+        app_modulo.app.config["TESTING"] = True
+        self.cliente = app_modulo.app.test_client()
+        html = self.cliente.get("/").get_data(as_text=True)
+        token = re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
+        self.cliente.post("/", data={"email": "admin@inov.com", "senha": "1234", "_csrf": token})
+
+    def test_tela_abre_e_diz_que_confere(self):
+        _, importacao_id = self.importar()
+
+        html = self.cliente.get(f"/importacoes/{importacao_id}/conferencia").get_data(as_text=True)
+
+        self.assertIn("Obras que conferem", html)
+        self.assertNotIn("badge danger", html)
+
+    def test_acusa_valor_alterado_depois_da_importacao(self):
+        """
+        O ponto da tela: se alguém editar um valor à mão depois, a conferência
+        passa a divergir. Ela compara com o valor vivo, não com uma foto.
+        """
+        _, importacao_id = self.importar()
+
+        with self.conectar() as conn:
+            conn.execute("""
+                UPDATE lancamentos SET valor = valor + 5000
+                WHERE obra_id = ? AND ano = 2026 AND mes = 7
+                  AND categoria_id = ?
+            """, (self.obra_251, self.id_categoria("Salarios e Ordenados")))
+            conn.commit()
+
+        html = self.cliente.get(f"/importacoes/{importacao_id}/conferencia").get_data(as_text=True)
+
+        self.assertIn("badge danger", html)
+        self.assertIn("Diverge", html)
+
+    def test_importacao_inexistente_nao_quebra(self):
+        r = self.cliente.get("/importacoes/9999/conferencia", follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("não encontrada", r.get_data(as_text=True))
